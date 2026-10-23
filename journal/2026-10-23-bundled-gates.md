@@ -21,3 +21,13 @@ case-sensitively, and Node accepted a gRPC success status in initial headers
 without the required trailing status. Two direct fixtures failed against the
 original clients, then passed after lowercasing receipt names and requiring
 status trailers for framed success. No dependency was added for these tests.
+
+The operator requested many commits and liberal pushes. The reviewed plan,
+clients and their regression fixtures were committed and pushed first; subsequent
+coherent implementation/validation changes will follow the same cadence.
+
+The optional transport implementation compiled with all features/targets and
+was committed/pushed as its own milestone. The live polyglot check then passed:
+Python and Node each submitted HTTP and gRPC content to a real listener. Native
+reads matched all four payloads exactly (including binary, malformed and empty
+content); receipt sequences/hashes and request/record counts matched too.
