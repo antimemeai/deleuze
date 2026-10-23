@@ -16,6 +16,7 @@ use std::time::{Duration, Instant};
 
 const OVERHEAD: usize = 108; // Bytes property encoding (32) + physical frame (76).
 const MAX_FILE_BYTES: u64 = 512 * 1024 * 1024;
+type CallResult = (Outcome, Option<u64>, Option<[u8; 32]>);
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Mode {
     Log,
@@ -149,12 +150,7 @@ enum Sink {
     File(Arc<Mutex<Floor>>),
 }
 impl Sink {
-    fn issue(
-        &self,
-        id: u64,
-        payload: usize,
-        synced: bool,
-    ) -> (Outcome, Option<u64>, Option<[u8; 32]>) {
+    fn issue(&self, id: u64, payload: usize, synced: bool) -> CallResult {
         let size = payload
             + if matches!(self, Self::File(_)) {
                 OVERHEAD
@@ -231,12 +227,7 @@ fn write_floor_batch(file: &mut File, frames: &[Vec<u8>]) -> io::Result<()> {
     Ok(())
 }
 impl Sink {
-    fn issue_batch(
-        &self,
-        ids: &[u64],
-        payload: usize,
-        synced: bool,
-    ) -> Vec<(Outcome, Option<u64>, Option<[u8; 32]>)> {
+    fn issue_batch(&self, ids: &[u64], payload: usize, synced: bool) -> Vec<CallResult> {
         let width = payload
             + if matches!(self, Self::File(_)) {
                 OVERHEAD
@@ -597,6 +588,17 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         ("payload_bytes".into(), args.payload.to_string()),
         ("producers".into(), args.producers.to_string()),
         ("producer_batch_size".into(), args.batch_size.to_string()),
+        (
+            "producer_calls".into(),
+            (0..args.producers as u64)
+                .map(|worker| {
+                    let quota =
+                        (args.count + args.producers as u64 - 1 - worker) / args.producers as u64;
+                    quota.div_ceil(args.batch_size as u64)
+                })
+                .sum::<u64>()
+                .to_string(),
+        ),
         ("batch_max_records".into(), args.batch_records.to_string()),
         ("batch_max_bytes".into(), args.batch_bytes.to_string()),
         ("batch_max_delay_us".into(), args.batch_delay_us.to_string()),
@@ -630,6 +632,17 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         ("file_bytes".into(), file_bytes.to_string()),
         ("runtime_workers".into(), "0".into()),
         ("connection_model".into(), "native_threads".into()),
+        (
+            "grouping_model".into(),
+            if args.mode == Mode::File {
+                "explicit_producer_groups_only"
+            } else if args.synced {
+                "bounded_sync_group_commit"
+            } else {
+                "caller_single_or_explicit_bulk_write"
+            }
+            .into(),
+        ),
         ("os".into(), std::env::consts::OS.into()),
         ("arch".into(), std::env::consts::ARCH.into()),
         (

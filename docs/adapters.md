@@ -32,7 +32,8 @@ An incomplete observed payload is still content; status and storage outcomes
 are separate. Gate limits do not establish infinite capacity.
 
 Append completion means the configured native boundary: a completed file write,
-or a completed write followed by `File::sync_all` when enabled. Neither is a
+or a completed batch write followed by `File::sync_all` in Synced mode.
+Concurrent adapter submissions can share that synchronization. Neither is a
 claim about arbitrary hardware failures. Power-loss resilience is outside the
 current build. An append error returns the owned content and distinguishes
 pre-write failure from an uncertain write result. Adapters must preserve that

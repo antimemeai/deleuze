@@ -1,6 +1,6 @@
 //! `cargo run --features gates --example gates -- log.dlz 127.0.0.1:0`
 use deleuze::{
-    Log, Options,
+    Completion, Log, Options,
     gates::{Gate, GateOptions},
 };
 use std::io::Write;
@@ -15,7 +15,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap_or_else(|| "127.0.0.1:8080".into())
         .into_string()
         .map_err(|_| "address must be UTF-8")?;
-    let log = Arc::new(Log::open(path, Options::default())?);
+    let mode = args
+        .next()
+        .unwrap_or_else(|| "written".into())
+        .into_string()
+        .map_err(|_| "completion must be UTF-8")?;
+    let completion = match mode.as_str() {
+        "written" => Completion::Written,
+        "synced" => Completion::Synced,
+        _ => return Err("completion must be written or synced".into()),
+    };
+    if args.next().is_some() {
+        return Err("unexpected extra arguments".into());
+    }
+    let log = Arc::new(Log::open(
+        path,
+        Options {
+            completion,
+            ..Options::default()
+        },
+    )?);
     let gate = Gate::new(log, GateOptions::default())?;
     let listener = tokio::net::TcpListener::bind(&address).await?;
     println!("{}", listener.local_addr()?);

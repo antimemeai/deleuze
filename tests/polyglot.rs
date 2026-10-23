@@ -1,7 +1,7 @@
 #![cfg(feature = "gates")]
 
 use deleuze::gates::{Gate, GateOptions};
-use deleuze::{Log, Options, Query, Value};
+use deleuze::{Completion, Log, Options, Query, Value};
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Command, Stdio};
@@ -44,9 +44,27 @@ fn client(language: &str, mode: &str, address: &str, payload: &[u8]) -> String {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "requires Node and Python grpcio; run cargo test --features gates --test polyglot -- --ignored"]
 async fn python_and_node_http_and_grpc_retain_exact_native_content() {
-    let temp = Temp(std::env::temp_dir().join(format!("deleuze-polyglot-{}", std::process::id())));
+    for completion in [Completion::Written, Completion::Synced] {
+        run_completion(completion).await;
+    }
+}
+
+async fn run_completion(completion: Completion) {
+    let temp = Temp(std::env::temp_dir().join(format!(
+        "deleuze-polyglot-{}-{completion:?}",
+        std::process::id()
+    )));
     std::fs::create_dir(&temp.0).unwrap();
-    let log = Arc::new(Log::open(temp.0.join("events.dlz"), Options::default()).unwrap());
+    let log = Arc::new(
+        Log::open(
+            temp.0.join("events.dlz"),
+            Options {
+                completion,
+                ..Options::default()
+            },
+        )
+        .unwrap(),
+    );
     let gate = Gate::new(Arc::clone(&log), GateOptions::default()).unwrap();
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = format!("http://{}", listener.local_addr().unwrap());

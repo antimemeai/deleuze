@@ -19,8 +19,10 @@ Native mode is closed-loop saturation. Each producer allocates/stamps its
 payload and completes append before its next request. Latencies include that
 producer work; throughput includes inter-call sampling work. The file floor
 writes payload+108 bytes per operation under a mutex, with no hash or record
-semantics. Both complete writes, or additionally call File::sync_all with
-`--sync synced`. These boundaries remain distinct.
+semantics. Both complete writes. In the current implementation `--sync synced` uses
+batched synchronization before completion. `--batch-size` sets native producer
+bulk size; batch count/byte/delay settings also control automatic grouping.
+These boundaries remain distinct. See [batching](batching.md).
 
 Network mode uses absolute due times, independently of replies. It records
 generator lag, start-to-reply and due-to-reply latency, separately for retained,
@@ -64,3 +66,17 @@ confidence interval or a deployment-reliability estimate. The generated payload
 is an eight-byte workload ID plus 0xa5 padding; it is not production traffic.
 No CPU affinity, cache flushing or exclusive-host control is implied. HTTP
 parser failures before the service callback remain an observation limit.
+
+The `batching` suite compares native explicit sizes 1/16/64/256/1024, concurrent
+single appends, matching single-producer file groups, written-path regressions
+and real synchronized HTTP/gRPC load. Explicit native groups use zero collection
+delay for the matching I/O comparison; automatic grouping uses 1ms.
+
+```sh
+python3 scripts/run-measurements.py --out-dir target/measurements/batched-new --repetitions 3 --suite batching
+```
+
+The earlier report's per-record-sync numbers remain historical. Reproduce those
+original semantics at its recorded source revisions; current Synced behavior
+groups calls. The old commands are not a claim that the current default still
+uses one synchronization per record.

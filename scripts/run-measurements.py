@@ -35,7 +35,7 @@ def normalized(name, rep, kind, metrics, resources):
         return next((metrics[key] for key in keys if key in metrics), "")
     row = {key: value(key) for key in [
         "mode", "boundary", "payload_bytes", "producers", "runtime_workers", "gate_in_flight",
-        "client_outstanding", "offered_rate_s", "offered", "issued", "not_sent", "completed", "pending",
+        "client_outstanding", "producer_batch_size", "producer_calls", "batch_max_records", "batch_max_bytes", "batch_max_delay_us", "grouping_model", "offered_rate_s", "offered", "issued", "not_sent", "completed", "pending",
         "client_retained", "client_failed", "client_unknown", "server_arrived", "server_retained",
         "server_failed", "server_unknown", "server_active", "partial_records", "server_only_complete",
         "issued_without_server_notification", "file_bytes", "drain_ns",
@@ -69,7 +69,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out-dir", type=Path, required=True)
     parser.add_argument("--repetitions", type=int, default=3)
-    parser.add_argument("--suite", choices=["baseline", "gate-capacity"], default="baseline")
+    parser.add_argument("--suite", choices=["baseline", "gate-capacity", "batching"], default="baseline")
     args = parser.parse_args()
     if not 1 <= args.repetitions <= 10:
         parser.error("repetitions must be1..10")
@@ -135,6 +135,30 @@ def main():
                             "--count", str(rate * 2), "--payload-bytes", "128", "--rate", str(rate),
                             "--outstanding", "128", "--gate-in-flight", str(gate), "--sync", "written",
                             "--runtime-workers", "4"]))
+    if args.suite == "batching":
+        cases = []
+        for rep in range(1, args.repetitions + 1):
+            for mode in ["log", "file"]:
+                for producers, batch_size in [(1, 1), (4, 1), (1, 16), (1, 64), (1, 256), (1, 1024)]:
+                    cases.append((f"written-{mode}-p{producers}-batch{batch_size}-r{rep}", rep, "native", [
+                        "target/release/examples/measure_native", "--mode", mode, "--count", "262144" if batch_size == 1024 else "65536", "--payload-bytes", "128",
+                        "--producers", str(producers), "--sync", "written", "--batch-size", str(batch_size), "--batch-records", str(max(256, batch_size)), "--batch-delay-us", "0"]))
+                for batch_size in [1, 16, 64, 256, 1024]:
+                    cases.append((f"synced-{mode}-explicit{batch_size}-r{rep}", rep, "native", [
+                        "target/release/examples/measure_native", "--mode", mode, "--count", "1000" if batch_size == 1 else str(batch_size * 256),
+                        "--payload-bytes", "128", "--producers", "1", "--sync", "synced", "--batch-size", str(batch_size),
+                        "--batch-records", "1" if batch_size == 1 else str(max(256, batch_size)), "--batch-delay-us", "0"]))
+            for producers in [4, 32, 64]:
+                cases.append((f"synced-log-auto-p{producers}-r{rep}", rep, "native", [
+                    "target/release/examples/measure_native", "--mode", "log", "--count", "4096", "--payload-bytes", "128",
+                    "--producers", str(producers), "--sync", "synced", "--batch-size", "1", "--batch-delay-us", "1000"]))
+            for protocol in ["http", "grpc"]:
+                for sync, rate, cap, gate in [("written", 1000, 128, 64), ("written", 40000, 128, 64),
+                                               ("synced", 1000, 128, 64), ("synced", 10000, 128, 64), ("synced", 40000, 512, 256)]:
+                    cases.append((f"{protocol}-{sync}-{rate}-gate{gate}-r{rep}", rep, "batch-network", [
+                        "target/release/examples/measure_gates", "--protocol", protocol, "--count", str(rate * 2),
+                        "--payload-bytes", "128", "--rate", str(rate), "--outstanding", str(cap), "--gate-in-flight", str(gate),
+                        "--sync", sync, "--runtime-workers", "4", "--batch-records", "256", "--batch-delay-us", "1000"]))
     random.Random(108).shuffle(cases)
     rows = []
     with (args.out_dir / "commands.tsv").open("x") as manifest:

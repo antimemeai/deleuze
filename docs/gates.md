@@ -11,10 +11,12 @@ without a Deleuze record, sequence or timestamp wrapper.
 cargo run --features gates --example gates -- ./events.dlz 127.0.0.1:3000
 ```
 
+Append `synced` after the address to use synchronized group completion.
 The example prints its bound address. Use `127.0.0.1:0` for an ephemeral port.
 Ctrl-C closes ingress and drains owned operations. Reopen the same clean log
 on the next run. The example uses the core's default complete-write boundary;
-it does not enable per-append synchronization.
+it uses Completion::Written. Configure Completion::Synced on the native Log
+to group synchronized completions across requests; see [batching](batching.md).
 
 ```sh
 printf 'ordinary producer output' | python3 examples/clients/capture.py http http://127.0.0.1:3000

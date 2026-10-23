@@ -33,7 +33,8 @@ remains withdrawn. See design/gates-and-events.md.
 Persist event contents only. Do not add whole-request archival, duplicate original
 body storage, a second capture layer or mandatory request-lifecycle events.
 Stored records and associated properties are immutable. Later contradictory
-assertions and corrections append new records. Expose append/read/query only:
+assertions and corrections append new records. Expose append (including
+append_batch), read and query only:
 no update/delete/overwrite/truncate/clear/prune or history-rewriting compaction
 methods and no raw storage handles providing a bypass. Current-state views are
 derived and never rewrite retained records.
@@ -48,6 +49,10 @@ outside the current build; do not let it drive storage architecture or tests.
 Use ordinary I/O error handling and clean reopen. Preserve public source
 snapshots in ignored `quarantine/` and put tracked acquisition manifests in
 `papers/recon/`.
+Synchronization uses bounded group commit, with per-record metadata and
+completion after the covering batch sync. Written single appends retain their
+caller-thread path; explicit bulk writes share the same storage routine. See
+design/batched-sync.md. No per-event barrier is the default synchronized policy.
 The optional `gates` transport stack (Tokio, Axum, http-body and tower-service)
 was discussed and accepted; see design/gate-implementation.md. Keep research and
 independent lane reports in `papers/`, and session records in `journal/`.

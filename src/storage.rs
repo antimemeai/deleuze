@@ -418,3 +418,154 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+mod batch_tests {
+    use super::*;
+    use crate::{Content, batch};
+    use std::cell::Cell;
+    struct Vectored {
+        bytes: Vec<u8>,
+        interrupt: bool,
+        zero_at: Option<usize>,
+    }
+    impl Write for Vectored {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            self.write_vectored(&[IoSlice::new(bytes)])
+        }
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+        fn write_vectored(&mut self, slices: &[IoSlice<'_>]) -> io::Result<usize> {
+            if self.interrupt {
+                self.interrupt = false;
+                return Err(io::Error::from(io::ErrorKind::Interrupted));
+            }
+            let allowed = 4.min(
+                self.zero_at
+                    .unwrap_or(usize::MAX)
+                    .saturating_sub(self.bytes.len()),
+            );
+            let mut written = 0;
+            for slice in slices {
+                let take = slice.len().min(allowed - written);
+                self.bytes.extend_from_slice(&slice[..take]);
+                written += take;
+                if written == allowed {
+                    break;
+                }
+            }
+            Ok(written)
+        }
+    }
+    #[test]
+    fn partial_vectored_writes_cross_frames_and_handle_interrupted_and_zero() {
+        let mut output = Vectored {
+            bytes: Vec::new(),
+            interrupt: true,
+            zero_at: None,
+        };
+        write_frames(&mut output, &[b"ab", b"cdef", b"g"]).unwrap();
+        assert_eq!(output.bytes, b"abcdefg");
+        let mut output = Vectored {
+            bytes: Vec::new(),
+            interrupt: true,
+            zero_at: Some(4),
+        };
+        assert_eq!(
+            write_frames(&mut output, &[b"ab", b"cdef", b"g"])
+                .unwrap_err()
+                .kind(),
+            io::ErrorKind::WriteZero
+        );
+        assert_eq!(output.bytes, b"abcd");
+    }
+    fn prepared(count: u8) -> Vec<batch::Prepared> {
+        (0..count)
+            .map(|n| batch::prepare(&Content::Bytes(vec![n]), Options::default()).unwrap())
+            .collect()
+    }
+    #[test]
+    fn one_barrier_covers_complete_frames_and_publishes_only_on_success() {
+        let mut writer = Writer {
+            io: Vec::<u8>::new(),
+            next: Some(1),
+            published_end: 12,
+            stopped: false,
+        };
+        let barriers = Cell::new(0);
+        let mut frames = prepared(3);
+        let results = writer.append_prepared(&mut frames, true, |bytes| {
+            assert_eq!(bytes.len(), 3 * 109);
+            barriers.set(barriers.get() + 1);
+            Ok(())
+        });
+        assert_eq!(barriers.get(), 1);
+        assert_eq!(writer.published_end, 12 + 3 * 109);
+        assert_eq!(
+            results
+                .iter()
+                .map(|r| r.as_ref().unwrap().seq())
+                .collect::<Vec<_>>(),
+            vec![1, 2, 3]
+        );
+        for (n, frame) in frames.iter().enumerate() {
+            assert_eq!(&frame.frame[12..20], &(n as u64 + 1).to_le_bytes());
+            assert_eq!(
+                &frame.frame[32..64],
+                results[n].as_ref().unwrap().property_hash()
+            );
+        }
+        assert_eq!(
+            writer.io,
+            frames
+                .iter()
+                .flat_map(|f| f.frame.iter().copied())
+                .collect::<Vec<_>>()
+        );
+        let mut failed = Writer {
+            io: Vec::<u8>::new(),
+            next: Some(1),
+            published_end: 12,
+            stopped: false,
+        };
+        let errors = failed.append_prepared(&mut prepared(3), true, |_| {
+            Err(io::Error::other("barrier failed"))
+        });
+        assert!(
+            errors
+                .iter()
+                .all(|r| matches!(r, Err((AppendOutcome::Unknown, Error::SharedIo(_)))))
+        );
+        assert_eq!(
+            (failed.published_end, failed.next, failed.stopped),
+            (12, Some(1), true)
+        );
+        let untouched = failed.append_prepared(&mut prepared(1), true, |_| {
+            panic!("must not synchronize after stop")
+        });
+        assert!(matches!(
+            &untouched[0],
+            Err((AppendOutcome::NotWritten, Error::Stopped))
+        ));
+    }
+    #[test]
+    fn sequence_exhaustion_writes_valid_prefix_without_wrapping() {
+        let mut writer = Writer {
+            io: Vec::<u8>::new(),
+            next: Some(u64::MAX - 1),
+            published_end: 12,
+            stopped: false,
+        };
+        let results =
+            writer.append_prepared(&mut prepared(3), false, |_| panic!("written must not sync"));
+        assert_eq!(results[0].as_ref().unwrap().seq(), u64::MAX - 1);
+        assert_eq!(results[1].as_ref().unwrap().seq(), u64::MAX);
+        assert!(matches!(
+            &results[2],
+            Err((AppendOutcome::NotWritten, Error::SequenceExhausted))
+        ));
+        assert_eq!(writer.next, None);
+        assert_eq!(writer.io.len(), 2 * 109);
+    }
+}

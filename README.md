@@ -41,8 +41,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
-The default returns after a complete file write. Set `sync_each_append: true`
-in `Options` to also call `File::sync_all` before success. An append error returns
+The default returns after a complete file write. Choose `Completion::Synced`
+for batched synchronization before success. Concurrent calls share a sync;
+`append_batch` also accepts bulk content. See [batching](docs/batching.md).
+An append error returns
 the supplied content and says whether a write was attempted with an unknown
 outcome. A write/sync error stops later appends in that instance. Clean files
 can be reopened; damaged files are rejected without changing them. Reads and

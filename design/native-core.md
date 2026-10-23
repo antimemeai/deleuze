@@ -1,5 +1,9 @@
 # Small first native core
 
+The following describes the first direct-write build. Its sync flag and
+per-record barrier policy are superseded by [batched sync](batched-sync.md).
+The record/property encoding and append-only file format remain unchanged.
+
 2026-10-23. Operator-directed scope reduction, independently reviewed and implemented in the first native build. Official Rust BLAKE3 1.8.7 is the sole direct dependency.
 
 ## Scope and ownership
