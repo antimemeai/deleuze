@@ -1,8 +1,8 @@
 # Gate-packed records and configurable features
 
 2026-10-23. Operator requirements and proposed feature defaults. Integer widths,
-time encoding, property encoding, hash algorithm, storage and dependencies remain
-undecided.
+time encoding and persistence choices for the first build are specified in
+[native-core.md](native-core.md); optional profile extensions remain proposals.
 
 ## Deleuze packs the record
 
@@ -44,6 +44,28 @@ The sequence must not silently become per-gate or wrap/reuse values contrary to
 its promised scope. Clock observations need not be monotonic. Timestamp units,
 precision, clock source, sampling point and clock-failure behavior remain open;
 cross-clock subtraction does not automatically measure queue latency.
+
+## Append-only observations
+
+Stored records and their associated properties are immutable. If record A says
+something exists and record B says it no longer exists, retain both as written.
+The assertions concern the observations/times described by their content; a later
+assertion does not modify an earlier record. Log sequence still means write order.
+
+The public log API exposes append, read and query operations only. There are no
+update, delete, overwrite, truncate, clear, retention-prune or history-rewriting
+compaction methods, including aliases or raw storage handles that provide the
+same capabilities. Corrections, retractions and later state are new records.
+Record fields are read-only through the public interface.
+
+Current-state calculations are derived views over that history. They may choose
+how to interpret later assertions but cannot write those interpretations back
+into earlier records. ABAC-aware reference assistance likewise leaves the stored
+masked properties, digest, sequence and timestamps unchanged.
+
+The first build reopens clean files and rejects incomplete or corrupt files
+without changing them. It exposes no repair bypass. Power-loss resilience is
+outside the current build.
 
 ## Configurable features with defaults
 

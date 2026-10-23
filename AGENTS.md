@@ -30,8 +30,20 @@ Large content may use references in properties. The Event { properties } proposa
 remains withdrawn. See design/gates-and-events.md.
 Persist event contents only. Do not add whole-request archival, duplicate original
 body storage, a second capture layer or mandatory request-lifecycle events.
-The current phase is
-source acquisition and research, before design and implementation. Preserve source
+Stored records and associated properties are immutable. Later contradictory
+assertions and corrections append new records. Expose append/read/query only:
+no update/delete/overwrite/truncate/clear/prune or history-rewriting compaction
+methods and no raw storage handles providing a bypass. Current-state views are
+derived and never rewrite retained records.
+Use maintained, reviewed cryptographic implementations. The official BLAKE3 crate
+was discussed and accepted for ordinary property integrity hashing. Good primitives
+do not establish protocol security: do not invent signing, authentication, chaining
+or anchoring protocols. See design/cryptographic-boundary.md. Any new security
+protocol needs a separate established-design/implementation evaluation.
+The operator approved proceeding from the record profile. Complete concrete design
+and implementation-plan reviews before production code. Power-loss resilience is
+outside the current build; do not let it drive storage architecture or tests.
+Use ordinary I/O error handling and clean reopen. Preserve public source
 snapshots in ignored `quarantine/` and put tracked acquisition manifests in
 `papers/recon/`.
 Keep research and independent lane reports in `papers/`, and session records in

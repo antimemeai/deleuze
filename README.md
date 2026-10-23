@@ -19,9 +19,37 @@ write sequence, property hash and its own record timestamps. Sequence orders log
 writes, not actions. [Record profiles](design/record-profile.md) describe core
 fields and configurable features with proposed defaults.
 Persist event contents only; there is no additional request archive.
+The public log is append-only: append, read and query, with no update or delete
+operations. Later assertions never rewrite earlier records.
 
-The project is in reconnaissance. Existing implementations are being acquired and
-read before we choose a design, storage format, interfaces, or dependencies.
+The first native core implements the reviewed
+[small-core design](design/native-core.md). It uses one append-only binary file
+and the official BLAKE3 crate. Power-loss resilience is outside this build.
+Bundled network gates and optional record profiles remain subsequent work.
+
+```rust
+use deleuze::{Log, Options};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let log = Log::open("observations.dlz", Options::default())?;
+    let record = log.append("ordinary producer output".to_owned())?;
+    let entry = log.read(record.seq())?.expect("published record");
+    println!("{entry:?}");
+    Ok(())
+}
+```
+
+The default returns after a complete file write. Set `sync_each_append: true`
+in `Options` to also call `File::sync_all` before success. An append error returns
+the supplied content and says whether a write was attempted with an unknown
+outcome. A write/sync error stops later appends in that instance. Clean files
+can be reopened; damaged files are rejected without changing them. Reads and
+queries currently scan linearly. This is a starting implementation, with no
+throughput or deployment-reliability claim yet.
+
+See [the adapter guide](docs/adapters.md) for custom integrations and
+[the cryptographic boundary](design/cryptographic-boundary.md) for what the
+property hash establishes.
 
 Start with [the public research map](papers/survey/README.md). Public reference
 originals live in ignored `quarantine/`; tracked manifests describe restoration.
@@ -38,4 +66,4 @@ Read [blackbird.md](blackbird.md) for the working doctrine. This is a relative
 symlink to `../blackbird.md` in the operator's workspace.
 
 Crates.io returned HTTP 404 for `deleuze` on 2026-10-23 UTC. This is an availability
-observation, not a reservation. No crate has been published in this research phase.
+observation, not a reservation. No crate has been published yet.

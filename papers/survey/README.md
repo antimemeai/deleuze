@@ -5,8 +5,10 @@ the gate, at deployment-funded reliability measured in nines, and to do so
 extremely quickly. Arrivals at a full or failing gate stay in that population.
 Native Rust and polyglot interfaces expose the same responsibility. World-state
 acquisition and evaluation fidelity motivate consumers of the retained stream.
-The design is to emerge from this study; no architecture or dependency has been
-selected.
+The study informed the [first native-core design](../../design/native-core.md).
+BLAKE3 is approved; network dependencies remain proposals. The literature below
+continues to inform subsequent comparisons rather than imposing every mechanism
+on the first build.
 
 ## What is here, and how deeply it has been read
 

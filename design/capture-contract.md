@@ -1,5 +1,10 @@
 # Capture contract — candidate for review
 
+Current implementation scope is [the small native core](native-core.md).
+The broader candidates below are research, including managed artifacts and
+buffering; they are not requirements for this build. Power-loss resilience is
+outside the current build.
+
 2026-10-23. This develops the operator's requirements in
 [gates and events](gates-and-events.md). It proposes an event shape and ownership
 contract for pressure testing. It does not select frameworks, codecs, a storage
@@ -49,6 +54,12 @@ This distinction is logical. It does not prescribe inline versus referenced
 storage, a separate table, another event stream, or a second persisted copy.
 Record fields and associated properties participate in the same content capture
 and retention contract.
+
+Stored records and properties are immutable. A later assertion that something
+does not exist never changes an earlier assertion that it exists. Corrections
+append new records. The public log API exposes append/read/query, with no update,
+delete or equivalent mutation path; current-state interpretation is a derived
+view. See [append-only observations](record-profile.md#append-only-observations).
 
 ## Property representation remains a separate choice
 

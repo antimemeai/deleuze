@@ -1,5 +1,10 @@
 # Starting Deleuze's design from the acquired corpus
 
+Current implementation scope is [the small native core](native-core.md).
+The broader candidates below are research, including managed artifacts and
+buffering; they are not requirements for this build. Power-loss resilience is
+outside the current build.
+
 2026-10-23. Working synthesis for operator discussion under `deleuze-5n0`, not an
 approved specification or implementation plan. The operator asked to begin with
 the research already assembled. Claude remains stopped. No dependency chosen.
