@@ -31,7 +31,38 @@ The candidate public envelope has exactly one field:
 ```text
 Event      = { properties: Properties }
 Properties = ordered sequence of (name: Text, value: Value)
+
+Text = valid UTF-8 text
+
+Value = Null
+      | Bool(boolean)
+      | I64(signed 64-bit integer)
+      | U64(unsigned 64-bit integer)
+      | F32Bits(unsigned 32-bit bit pattern)
+      | F64Bits(unsigned 64-bit bit pattern)
+      | Text(Text)
+      | Bytes(ByteContent)
+      | List(sequence of Value)
+      | Object(Properties)
+      | Encoded { representation: Text, content: ByteContent }
+
+ByteContent = Inline(sequence of octets)
+            | Managed(ManagedContentRef)
+
+ManagedContentRef = opaque, engine-created, immutable content reference
 ```
+
+This is the complete logical **submitted-event proposal**, not an implemented
+Rust API or a wire schema. The managed carrier is a conceptual storage option;
+its concrete representation and public exposure remain undecided. Caller-supplied
+paths need no such special type and can remain ordinary text properties. The
+engine's persisted-record schema is not finished; its framing, identity, version
+and timing fields must be decided separately rather than hidden in this model.
+
+One outer field does not make the whole model small: the recursive value domain
+and content-carrier rules hold most of its complexity. The next design work must
+justify those choices as well as decide which universal metadata, if any, belongs
+in the public envelope rather than properties or engine records.
 
 Property names are UTF-8 text. Entry order and duplicate names are retained;
 turning entries into a map is an explicit consumer view. An empty properties
