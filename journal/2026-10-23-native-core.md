@@ -33,3 +33,6 @@ HTTP/gRPC gates and optional profile extensions are separate Beads issues.
 Network dependencies remain proposals, with the operator discussion pending.
 The custom-adapter guide describes the common append path. No additional
 request archival or persistence subsystem was added.
+
+The installed `bd` has no `sync` command and no configured Dolt remote. The
+portable issue export is committed in `.beads/issues.jsonl`; Git push succeeded.
