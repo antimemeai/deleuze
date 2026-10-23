@@ -5,7 +5,7 @@ use deleuze::gates::{Gate, GateOptions};
 use deleuze::{Entry, Log, Options, Query, Value};
 use measure_support::{Outcome, Sample};
 use std::collections::BTreeMap;
-use std::io;
+use std::io::{self, BufRead, Read};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Instant;
@@ -152,8 +152,8 @@ async fn run(config: Config) -> Result<(), Box<dyn std::error::Error>> {
         output.join("append.dlz"),
         Options {
             sync_each_append: config.synced,
-            max_query_records: config.count as u32,
-            max_query_bytes: (config.count as u64) * (config.size as u64 + 200),
+            max_query_records: config.count as u32 + 1,
+            max_query_bytes: (config.count as u64 + 1) * (config.size as u64 + 200),
             ..Options::default()
         },
     )?);
@@ -186,19 +186,40 @@ async fn run(config: Config) -> Result<(), Box<dyn std::error::Error>> {
         output.join("samples.tsv").to_string_lossy().into_owned(),
     ];
     let wall_start = Instant::now();
-    let client = tokio::task::spawn_blocking(move || {
-        std::process::Command::new("node")
+    let (phase, completed) = tokio::sync::oneshot::channel();
+    let client = tokio::task::spawn_blocking(move || -> io::Result<std::process::Output> {
+        let mut child = std::process::Command::new("node")
             .arg(script)
             .args(args)
-            .output()
-    })
-    .await;
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()?;
+        let mut stdout = io::BufReader::new(child.stdout.take().expect("piped stdout"));
+        let mut marker = String::new();
+        let read = stdout.read_line(&mut marker);
+        let phase_result = read.and_then(|_| {
+            if marker == "WORKLOAD_COMPLETE\n" {
+                Ok(())
+            } else {
+                Err(invalid("missing client completion marker"))
+            }
+        });
+        let _ = phase.send(phase_result);
+        let mut remainder = Vec::new();
+        stdout.read_to_end(&mut remainder)?;
+        let mut result = child.wait_with_output()?;
+        result.stdout = remainder;
+        Ok(result)
+    });
+    let phase_result = completed.await;
     let drain_start = Instant::now();
     let _ = stop.send(());
     server.await??;
     let drain_ns = drain_start.elapsed().as_nanos();
     let wall_ns = wall_start.elapsed().as_nanos();
-    let client = client??;
+    // Joining the client and reading exported artifacts are outside capture timing.
+    let client = client.await??;
+    phase_result??;
     std::fs::write(output.join("client-summary.tsv"), &client.stdout)?;
     std::fs::write(output.join("client-stderr.txt"), &client.stderr)?;
     if !client.status.success() {
@@ -227,7 +248,7 @@ async fn run(config: Config) -> Result<(), Box<dyn std::error::Error>> {
             .ok_or_else(|| invalid(format!("missing client field {key}")))
     };
     let reconcile_start = Instant::now();
-    let samples = measure_support::read_samples(&output.join("samples.tsv"))?;
+    let samples = measure_support::read_samples(output.join("samples.tsv"))?;
     if samples.len() != config.count {
         return Err(invalid("sample count differs from offered").into());
     }
@@ -271,7 +292,7 @@ async fn run(config: Config) -> Result<(), Box<dyn std::error::Error>> {
     }
     let entries = log
         .query(Query {
-            limit: config.count as u32,
+            limit: config.count as u32 + 1,
             ..Query::default()
         })?
         .entries;
@@ -369,6 +390,23 @@ async fn run(config: Config) -> Result<(), Box<dyn std::error::Error>> {
             (issued - stats.arrived).to_string(),
         ),
         ("server_window_ns", wall_ns.to_string()),
+        (
+            "server_window",
+            "client_launch_through_server_drain_excludes_artifact_export".into(),
+        ),
+        (
+            "connection_model",
+            if config.protocol == "grpc" {
+                "one_http2_session"
+            } else {
+                "http1_keepalive_pool"
+            }
+            .into(),
+        ),
+        (
+            "arrival_model",
+            "absolute_due_times_bounded_client_outstanding".into(),
+        ),
         ("drain_ns", drain_ns.to_string()),
         ("reconcile_ns", reconcile_ns.to_string()),
         (
@@ -431,7 +469,7 @@ async fn run(config: Config) -> Result<(), Box<dyn std::error::Error>> {
         .iter()
         .map(|(key, value)| (key.as_str(), value.clone()))
         .collect();
-    measure_support::write_summary(&output.join("summary.tsv"), &fields)?;
+    measure_support::write_summary(output.join("summary.tsv"), &fields)?;
     for (key, value) in summary {
         println!("{key}\t{value}");
     }

@@ -132,6 +132,8 @@ function pump() {
 pump();
 await done;
 const end = now();
+// Parent closes/drains the server now; artifact export stays outside its timer.
+console.log('WORKLOAD_COMPLETE');
 agent?.destroy();
 session?.destroy();
 if (issued + notSent !== count || counts.retained + counts.failed + counts.unknown !== issued || active !== 0) {

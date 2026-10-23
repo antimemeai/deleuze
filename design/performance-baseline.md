@@ -27,7 +27,9 @@ all-completed tails so quick rejections cannot hide retained-event tails.
 After the schedule stops, await every issued request (bounded client timeout),
 then close/drain the gate and read counters. Server-retained throughput uses
 the complete Rust wall window from client-process launch through gate drain;
-this conservatively includes client startup/artifact-output overhead. Label
+this conservatively includes client startup. A completion marker on the existing
+child stdout pipe triggers server drain before raw artifact export; export is
+outside capture timing. Label
 client and offered windows separately. Reject zero/overflow inputs.
 
 Default payloads contain an eight-byte little-endian workload ID followed by

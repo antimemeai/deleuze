@@ -221,20 +221,34 @@ fn measure(args: &Args, sink: &Sink) -> io::Result<(Vec<Sample>, u64)> {
             samples
         }));
     }
-    start.set(Instant::now()).expect("single start origin");
-    barrier.wait();
     let mut samples = Vec::new();
     samples
         .try_reserve_exact(args.count as usize)
         .map_err(io::Error::other)?;
+    let mut completed = Vec::new();
+    completed
+        .try_reserve_exact(args.producers)
+        .map_err(io::Error::other)?;
+    start.set(Instant::now()).expect("single start origin");
+    barrier.wait();
     for thread in threads {
-        samples.extend(
+        completed.push(
             thread
                 .join()
                 .map_err(|_| io::Error::other("producer panicked"))?,
         );
     }
-    let elapsed = samples.iter().map(|s| s.end_ns).max().unwrap_or(0);
+    // No aggregate allocation, bulk sample copies, sorting or artifact I/O
+    // competes with producers before their final completion timestamp.
+    let elapsed = completed
+        .iter()
+        .flatten()
+        .map(|s| s.end_ns)
+        .max()
+        .unwrap_or(0);
+    for worker_samples in completed {
+        samples.extend(worker_samples);
+    }
     samples.sort_unstable_by_key(|s| s.id);
     if samples.len() != args.count as usize
         || samples.iter().enumerate().any(|(i, s)| s.id != i as u64)
@@ -244,10 +258,8 @@ fn measure(args: &Args, sink: &Sink) -> io::Result<(Vec<Sample>, u64)> {
     Ok((samples, elapsed))
 }
 
-fn verify_receipts(
-    samples: &[Sample],
-    retained: &[(u64, Option<u64>, Option<[u8; 32]>)],
-) -> io::Result<(u64, u64)> {
+type RetainedReceipt = (u64, Option<u64>, Option<[u8; 32]>);
+fn verify_receipts(samples: &[Sample], retained: &[RetainedReceipt]) -> io::Result<(u64, u64)> {
     let mut seen = BTreeSet::new();
     let mut server_only = 0;
     for &(id, seq, hash) in retained {
@@ -291,17 +303,22 @@ fn reconcile(
                 .query(Query {
                     after: None,
                     through: None,
-                    limit: args.count as u32,
+                    limit: (args.count + 1) as u32,
                 })
                 .map_err(io::Error::other)?;
-            // Exactly-full pages may conservatively carry a continuation. This
-            // workload has at most count records; no second query is needed.
+            // One extra slot exposes an unexpected suffix without a second scan.
+            if page.entries.len() > args.count as usize {
+                return Err(mismatch("more retained records than offered IDs"));
+            }
             for entry in page.entries {
-                let [(_, Value::Bytes(bytes))] = entry.properties.as_slice() else {
+                let [(key, Value::Bytes(bytes))] = entry.properties.as_slice() else {
                     return Err(mismatch(
                         "native retained properties differ from byte-content mapping",
                     ));
                 };
+                if key != "content" {
+                    return Err(mismatch("unexpected native property key"));
+                }
                 let id = verify_payload(bytes, args.payload)?;
                 retained.push((
                     id,
@@ -351,8 +368,8 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
             &data_path,
             Options {
                 sync_each_append: args.synced,
-                max_query_records: args.count as u32,
-                max_query_bytes: args.count * (args.payload as u64 + 32),
+                max_query_records: (args.count + 1) as u32,
+                max_query_bytes: (args.count + 1) * (args.payload as u64 + 32),
                 ..Options::default()
             },
         )?)),
@@ -385,9 +402,25 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         "file_floor"
     };
     let rate = |number: u64| format!("{:.3}", number as f64 * 1e9 / elapsed_ns.max(1) as f64);
+    let file_bytes = data_path.metadata()?.len();
+    let floor_tail_bytes = if args.mode == Mode::File {
+        file_bytes % (args.payload + OVERHEAD) as u64
+    } else {
+        0
+    };
     let mut summary: Vec<(String, String)> = vec![
         ("mode".into(), mode.into()),
         ("arrival_model".into(), "closed_loop".into()),
+        ("clock".into(), "std::time::Instant".into()),
+        ("warmup".into(), "none".into()),
+        (
+            "operation_timer".into(),
+            "input_allocation_id_stamp_and_complete_call".into(),
+        ),
+        (
+            "throughput_window".into(),
+            "pre_barrier_origin_through_last_completion_including_intercall_sample_storage".into(),
+        ),
         (
             "boundary".into(),
             if args.synced {
@@ -409,7 +442,14 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         ("client_unknown".into(), unknown.to_string()),
         ("verified_complete_records".into(), retained.to_string()),
         ("server_only_retained".into(), server_only.to_string()),
-        ("incomplete_records".into(), "0".into()),
+        (
+            "incomplete_records".into(),
+            u64::from(floor_tail_bytes != 0).to_string(),
+        ),
+        (
+            "incomplete_file_floor_bytes".into(),
+            floor_tail_bytes.to_string(),
+        ),
         ("workload_ns".into(), elapsed_ns.to_string()),
         ("drain_ns".into(), "0".into()),
         ("reconciliation_ns".into(), reconciliation_ns.to_string()),
@@ -419,7 +459,7 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
             "logical_bytes".into(),
             (retained * args.payload as u64).to_string(),
         ),
-        ("file_bytes".into(), data_path.metadata()?.len().to_string()),
+        ("file_bytes".into(), file_bytes.to_string()),
         ("runtime_workers".into(), "0".into()),
         ("connection_model".into(), "native_threads".into()),
         ("os".into(), std::env::consts::OS.into()),
@@ -441,6 +481,10 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         ("verification".into(), "passed".into()),
     ];
     if args.mode == Mode::Log {
+        summary.push((
+            "server_counter_source".into(),
+            "observed_native_public_call_results_and_posttiming_query".into(),
+        ));
         for (key, value) in [
             ("server_arrived", args.count - not_sent),
             ("server_active", 0),
@@ -466,7 +510,11 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         summary.push((format!("{label}_count"), values.len().to_string()));
         for percentile in [50, 95, 99, 100] {
             summary.push((
-                format!("{label}_service_p{percentile}_ns"),
+                if percentile == 100 {
+                    format!("{label}_service_max_ns")
+                } else {
+                    format!("{label}_service_p{percentile}_ns")
+                },
                 nearest_rank(&values, percentile)
                     .map(|v| v.to_string())
                     .unwrap_or_default(),
@@ -488,4 +536,172 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
 }
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     run(Args::parse(std::env::args().skip(1))?)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn sample(outcome: Outcome) -> Sample {
+        Sample {
+            id: 0,
+            due_ns: 0,
+            start_ns: 0,
+            end_ns: 10,
+            outcome,
+            seq: Some(7),
+            hash: Some([3; 32]),
+        }
+    }
+    #[test]
+    fn reconciliation_rejects_duplicate_missing_unknown_ids_and_wrong_receipts() {
+        let samples = [sample(Outcome::Retained)];
+        let good = (0, Some(7), Some([3; 32]));
+        assert_eq!(verify_receipts(&samples, &[good]).unwrap(), (1, 0));
+        assert!(verify_receipts(&samples, &[]).is_err());
+        assert!(verify_receipts(&samples, &[good, good]).is_err());
+        assert!(verify_receipts(&samples, &[(1, Some(7), Some([3; 32]))]).is_err());
+        assert!(verify_receipts(&samples, &[(0, Some(8), Some([3; 32]))]).is_err());
+        assert!(verify_receipts(&samples, &[(0, Some(7), Some([4; 32]))]).is_err());
+        assert!(verify_receipts(&[sample(Outcome::Failed)], &[good]).is_err());
+        assert!(verify_receipts(&[sample(Outcome::NotSent)], &[good]).is_err());
+        assert_eq!(
+            verify_receipts(&[sample(Outcome::Unknown)], &[good]).unwrap(),
+            (1, 1)
+        );
+    }
+    #[test]
+    fn cli_rejects_zero_overflow_and_excessive_run_budget() {
+        let base = |count, payload, producers| Args {
+            mode: Mode::Log,
+            out: PathBuf::from("unused"),
+            count,
+            payload,
+            producers,
+            synced: false,
+        };
+        for args in [
+            base(0, 128, 1),
+            base(10, 7, 1),
+            base(10, 128, 0),
+            base(10, 128, 11),
+            base(u64::MAX, 128, 1),
+            base(1_000_000, 1_048_576, 1),
+        ] {
+            assert!(args.validate().is_err());
+        }
+        assert!(base(50_000, 128, 4).validate().is_ok());
+        assert!(base(20_000, 4096, 4).validate().is_ok());
+    }
+    #[test]
+    fn tiny_log_and_file_runs_reconcile_and_refuse_overwrite() {
+        let root = PathBuf::from("target/measurements").join(format!(
+            "native-functional-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        for (name, mode, synced) in [("log", Mode::Log, false), ("floor", Mode::File, true)] {
+            let out = root.join(name);
+            let args = Args {
+                mode,
+                out: out.clone(),
+                count: 8,
+                payload: 128,
+                producers: 3,
+                synced,
+            };
+            run(args).unwrap();
+            let samples = measure_support::read_samples(out.join("samples.tsv")).unwrap();
+            assert_eq!(samples.len(), 8);
+            assert!(
+                samples
+                    .iter()
+                    .all(|s| s.outcome == Outcome::Retained && s.start_ns == s.due_ns)
+            );
+            let summary = std::fs::read_to_string(out.join("summary.tsv")).unwrap();
+            assert!(summary.contains("verified_complete_records\t8\n"));
+            assert!(summary.contains("pending\t0\n"));
+            let data = out.join(if mode == Mode::Log {
+                "append.dlz"
+            } else {
+                "floor.bin"
+            });
+            assert_eq!(
+                data.metadata().unwrap().len(),
+                8 * (128 + OVERHEAD) as u64 + if mode == Mode::Log { 12 } else { 0 }
+            );
+            let before = std::fs::read(&data).unwrap();
+            assert!(
+                run(Args {
+                    mode,
+                    out,
+                    count: 8,
+                    payload: 128,
+                    producers: 3,
+                    synced
+                })
+                .is_err()
+            );
+            assert_eq!(std::fs::read(data).unwrap(), before);
+        }
+        std::fs::remove_dir_all(root).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod extra_record_regression {
+    use super::*;
+    #[test]
+    fn regression_extra_native_record_is_not_censored_by_query_limit() {
+        let out = PathBuf::from("target/measurements").join(format!(
+            "extra-native-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir_all(&out).unwrap();
+        let path = out.join("append.dlz");
+        let log = Arc::new(
+            Log::open(
+                &path,
+                Options {
+                    max_query_records: 2,
+                    max_query_bytes: 320,
+                    ..Options::default()
+                },
+            )
+            .unwrap(),
+        );
+        let receipt = log.append(make_payload(0, 128).unwrap()).unwrap();
+        log.append(make_payload(1, 128).unwrap()).unwrap();
+        let samples = vec![Sample {
+            id: 0,
+            due_ns: 0,
+            start_ns: 0,
+            end_ns: 1,
+            outcome: Outcome::Retained,
+            seq: Some(receipt.seq()),
+            hash: Some(*receipt.property_hash()),
+        }];
+        let args = Args {
+            mode: Mode::Log,
+            out: out.clone(),
+            count: 1,
+            payload: 128,
+            producers: 1,
+            synced: false,
+        };
+        let sink = Sink::Log(log);
+        let result = reconcile(&args, &sink, &path, &samples);
+        drop(sink);
+        std::fs::remove_dir_all(out).unwrap();
+        assert!(
+            result.is_err(),
+            "an extra retained record must not be hidden by the result limit"
+        );
+    }
 }
