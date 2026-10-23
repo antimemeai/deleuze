@@ -1,5 +1,13 @@
 # Capture contract: bounded design review
 
+**Representation premise superseded.** The operator clarified that an event has
+schema-defined record fields with associated properties outside that schema.
+The earlier one-field proposal was wrong and is withdrawn. Representation cases
+below document review of that earlier proposal; they do not establish the current
+record schema or property representation. Ownership, cancellation and retention
+findings remain relevant. The corrected record-field model needs its own review
+once the fields are proposed.
+
 2026-10-23. Two independent reviews pressure-tested the
 [candidate contract](../../design/capture-contract.md): protocol/representation
 and ownership/retention. They used public specifications and generic reasoning.

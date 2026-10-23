@@ -24,93 +24,57 @@ ownership is not a second persisted copy. For large streamed content, the operat
 can choose a content artifact/reference as its retained representation and keep
 any decoded view derived. It must not persist both full representations.
 
-## One-field event proposal
+## Record schema and associated properties
 
-The candidate public envelope has exactly one field:
+The operator clarified the logical model: an event has schema-defined record
+fields, accompanied by arbitrary property key/value pairs. The property entries
+are data associated with the record; they are not members of the record schema.
+Adding or changing a property key does not add or change a schema field.
 
-```text
-Event      = { properties: Properties }
-Properties = ordered sequence of (name: Text, value: Value)
+The previous `Event { properties }` proposal was a misunderstanding and is
+withdrawn. There is not yet a complete proposed record-field list. Its identity,
+time, source/type and other candidate fields must be chosen explicitly; the
+property representation cannot stand in for those decisions.
 
-Text = valid UTF-8 text
+A field such as `property_hash` may belong to a particular record schema. It
+would be a defined record field describing associated property data, while the
+property pairs themselves remain outside that schema. The operator offered it
+as a possibility, not a requirement to put an optional hash field in every record.
+No hash algorithm or hashed representation has been selected.
 
-Value = Null
-      | Bool(boolean)
-      | I64(signed 64-bit integer)
-      | U64(unsigned 64-bit integer)
-      | F32Bits(unsigned 32-bit bit pattern)
-      | F64Bits(unsigned 64-bit bit pattern)
-      | Text(Text)
-      | Bytes(ByteContent)
-      | List(sequence of Value)
-      | Object(Properties)
-      | Encoded { representation: Text, content: ByteContent }
+This distinction is logical. It does not prescribe inline versus referenced
+storage, a separate table, another event stream, or a second persisted copy.
+Record fields and associated properties participate in the same content capture
+and retention contract.
 
-ByteContent = Inline(sequence of octets)
-            | Managed(ManagedContentRef)
+## Property representation remains a separate choice
 
-ManagedContentRef = opaque, engine-created, immutable content reference
-```
+Property names/values and their encoding need an explicit preservation rule.
+The earlier ordered-entry container, recursive value union and managed-carrier
+shape were proposals, not consequences of the record schema. Their adoption is
+not established by this clarification. In particular, choosing record fields
+and choosing property ordering/duplicate-name behavior are different decisions.
 
-This is the complete logical **submitted-event proposal**, not an implemented
-Rust API or a wire schema. The managed carrier is a conceptual storage option;
-its concrete representation and public exposure remain undecided. Caller-supplied
-paths need no such special type and can remain ordinary text properties. The
-engine's persisted-record schema is not finished; its framing, identity, version
-and timing fields must be decided separately rather than hidden in this model.
+Properties cannot impersonate or overwrite schema-defined record fields. A
+property whose key happens to match a record field remains property data. The
+supported interface must make that separation unambiguous, without allocating a
+new record-schema member for each property name.
 
-One outer field does not make the whole model small: the recursive value domain
-and content-carrier rules hold most of its complexity. The next design work must
-justify those choices as well as decide which universal metadata, if any, belongs
-in the public envelope rather than properties or engine records.
+A property representation must account for arbitrary content without silently
+rounding numbers, replacing malformed text or losing distinctions its mapping
+promises. Opaque content or references remain available where ordinary conversion
+cannot preserve the content. These replace the affected content representation;
+they do not add a request archive or another event.
 
-Property names are UTF-8 text. Entry order and duplicate names are retained;
-turning entries into a map is an explicit consumer view. An empty properties
-sequence is valid. There is no mandatory domain, severity, actor, action, trace,
-timestamp, event identifier or catalog of event kinds in this proposed envelope.
-Applications can put those values in properties. Storage needs such as format
-version, record identity and framing belong to the engine's representation and
-must earn their cost; their binary layout is not selected here.
+Fallback must still produce a valid record under the chosen record schema and
+associate the retained contents with it. The exact field-assignment and fallback
+rules cannot be completed until that schema is chosen. The earlier fallback
+expressed as a one-field Event with a `content` property is withdrawn with the
+one-field schema; it does not define a special new record shape.
 
-The proposed native value domain distinguishes null, boolean, signed and unsigned
-64-bit integers, 32-bit and 64-bit floating-point bit patterns, UTF-8 text, bytes,
-lists and nested property
-sequences. An encoded-content value carries a representation identifier and opaque
-bytes or a managed content reference for values outside that domain. It permits
-extensions without expanding the outer envelope or pretending arbitrary content
-is UTF-8 text. This is a candidate type domain, not a committed Rust enum.
-
-Conversion must preserve numeric distinctions. In particular, an adapter must
-not round a large integer through a double, convert a number to an ordinary
-string, replace malformed text, or collapse duplicate names to make it fit.
-A decimal outside an exact supported mapping can remain encoded numeric content.
-No big-number arithmetic library is required merely to retain its representation.
-Depth, expansion and allocation limits may stop interpretation; retained opaque
-content must still account for the arrival.
-
-If a name cannot fit Text, an opaque value in that same name slot cannot repair
-it. Retain the smallest enclosing content container in encoded form. For an
-entire unconvertible event-content container, the candidate emits one Event with
-one ordinary property named `content`, whose value is the encoded content. This
-replaces the unconvertible representation; it is not a second event. Do not merge
-partially decoded entries into that wrapper. The name `content` is not reserved
-in caller data and carries no storage authority.
-
-Outer envelope fields are strict: unknown fields, duplicate outer `properties`
-fields, or `properties: null` cannot silently disappear or become an empty event.
-Use the same content-container fallback when no lossless normal mapping exists.
-An explicitly empty Properties sequence remains a valid event. Within Properties,
-duplicate names are allowed and retained. Unsupported floating-point widths also
-use encoded content; supported widths retain their original bits, including NaN
-payloads and signed zero.
-
-Caller properties remain caller data. Engine metadata is held separately and
-cannot be overridden by a property with a convincing name. Opaque values are
-content values; they do not require another audit event or provenance layer.
-
-The [protocol study](../papers/survey/gate-protocols/README.md) grounds the numeric,
-duplicate-key and decoding concerns. The one-field envelope and value choices
-above are our design proposals, not conclusions supplied by a protocol standard.
+The [protocol study](../papers/survey/gate-protocols/README.md) informs value
+mapping and conversion risks. It does not choose the record schema, require a
+particular property container, or prescribe the physical layout.
 
 ## Gate observation
 

@@ -99,14 +99,14 @@ the unfinished Verbs tool currently covers.
 The operator clarified that the promise begins with a request reaching a gate.
 Ship HTTP and gRPC gates, native Rust integration and custom-adapter interfaces
 and guidance. All integrations use one capture path with no access to engine
-internals. Content arrives as arbitrary properties on an extremely small, strict
-event envelope; unfamiliar or malformed input must still be representable and
-persistable somehow. Large content can use property references. See
+internals. An event has an extremely small, strict record schema and associated arbitrary
+properties outside that schema; unfamiliar or malformed input must still be
+representable and persistable somehow. Large content can use property references. See
 [gates and events](gates-and-events.md) for the requirements and unresolved
 representation, ownership and artifact questions.
 
 [The capture-contract candidate](capture-contract.md) proposes a concrete
-one-field envelope and content ownership rules. Its
+record/property distinction and content ownership rules. Its
 [bounded review](../papers/reviews/capture-contract.md) records the counterexamples
 addressed so far. Event contents are retained once; whole-request archival and
 duplicate original-body storage are excluded by the operator.

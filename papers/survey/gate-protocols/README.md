@@ -5,6 +5,11 @@
 targeted study of event-content conversion and ownership, not a request-archival
 proposal. No framework, codec, runtime or dependency has been selected.
 
+The later operator clarification separates record fields from associated property
+data. Earlier examples involving an outer `properties` member concerned a
+provisional transport shape, not a chosen record-schema field. The one-field
+event proposal is withdrawn; value/container choices remain open.
+
 | Source | Selected reading and relevance |
 | --- | --- |
 | [gRPC over HTTP/2](https://grpc.github.io/grpc/core/md_doc__p_r_o_t_o_c_o_l-_h_t_t_p2.html) | Request/message framing, compression and failures. Message boundaries differ from DATA-frame boundaries and compression contexts are per message. This informs extraction of event content; it does not require retaining transport framing or headers. |

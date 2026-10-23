@@ -13,9 +13,12 @@ as only successfully admitted events. Support Rust integration and polyglot
 interfaces. World-state acquisition/evals are consumers of the retained stream.
 Ship HTTP and gRPC gates plus interfaces and guidance for custom adapters. The
 promise begins when a request reaches a gate. All integrations use one owned
-capture path; do not expose internals or alternative mutation routes. Event
-content uses arbitrary properties on an extremely small, strict schema. Unknown
-or malformed input must still have a persistable representation; large content
+capture path; do not expose internals or alternative mutation routes. An event
+has an extremely small, strict record schema with associated arbitrary property
+key/value pairs outside that schema. Property keys are not schema fields. A field
+such as property_hash could belong to a record schema, but is not required by this
+example. The prior Event { properties } proposal is withdrawn. Unknown or
+malformed input must still have a persistable representation; large content
 may use references in properties. See design/gates-and-events.md.
 Persist event contents only. Do not add whole-request archival, duplicate original
 body storage, a second capture layer or mandatory request-lifecycle events.

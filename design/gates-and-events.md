@@ -4,8 +4,9 @@
 Storage, concrete schema fields, codecs, frameworks and dependencies remain
 undecided. This is design work, not an implementation plan.
 
-[The capture-contract candidate](capture-contract.md) proposes a one-field event
-and develops the content conversion, ownership and failure rules for review.
+[The capture-contract candidate](capture-contract.md) distinguishes fixed record
+fields from associated arbitrary properties, and develops ownership and failure
+rules. The actual record-field list is still to be chosen.
 
 ## The promise begins when a request reaches a gate
 
@@ -28,7 +29,7 @@ flowchart LR
     G[gRPC gate] --> C
     R[Native Rust interface] --> C
     A[Custom adapter] --> C
-    C --> E[Small strict event envelope]
+    C --> E[Strict record with associated properties]
     E --> P[Configured persistence path]
 ```
 
@@ -50,32 +51,29 @@ normal/fallback conversion, completion, errors, cancellation and shutdown. An
 adapter must account for paths that fail before ordinary event construction,
 as well as the successful path. Native Rust callers use the same capture contract.
 
-## Strict envelope, arbitrary properties
+## Strict record schema, associated arbitrary properties
 
-The event has an extremely small, strictly schematized outer type. Its properties
-carry arbitrary event content. Domain-specific fields and interpretations do not
-continually expand the envelope. The exact required fields and property-value
-representation have not been selected.
+An event consists of schema-defined record fields with associated arbitrary
+property key/value pairs. The individual property entries are outside the record
+schema. They do not become new record fields as property keys change. The exact
+record fields still need to be chosen; the former one-field proposal is withdrawn.
 
-Every observable incoming payload needs a valid representation in that envelope.
-Normal structured input can become properties; input that cannot be decoded or
-represented normally must have an opaque-data or reference representation.
-Conversion failure must not cause the original content to disappear. A diagnostic
-alone is not a substitute for retaining the content under the chosen contract.
-Unknown fields, unfamiliar event kinds and malformed content need explicit
-handling without silently discarding the arrival.
+A field such as `property_hash` could be part of a record schema without making
+the associated property pairs members of that schema. This is a possibility,
+not a requirement that every record carry that field. The distinction does not
+prescribe separate storage or an additional capture layer.
 
-Arbitrary properties do not require JSON as the internal model. Native values
-and binary storage remain the working doctrine. Cross-language conversion must
-not silently change numbers, binary values, malformed text or other distinctions
-that the input representation preserves; opaque retention can cover content
-outside the structured property domain. Property names and engine-generated
-metadata also need a collision rule.
+The interface must separate record fields and properties unambiguously. A property
+key matching a record field cannot overwrite that field. Native values and binary
+storage remain the working doctrine; no property value domain, container, encoding
+or hash algorithm is selected here.
 
-Strictness therefore makes the retained representation predictable while keeping
-the payload domain broad. A valid outer event can describe an input that failed
-normal decoding. This does not select multiple public envelope types, mandatory
-diagnostic fields, a particular property namespace or a wire format.
+Conversion must preserve the event contents under the declared mapping. Content
+that cannot fit ordinary properties may use opaque representation or references,
+with a valid record populated according to defined schema rules. A diagnostic is
+not a substitute for retaining the content, and conversion failure does not
+remove an arrival from capture accounting. Those fallback rules need to be made
+concrete alongside the record-field choice.
 
 ## Large content and references
 
@@ -103,8 +101,8 @@ remain part of the all-arrival objective. A fallback depending entirely on the
 same exhausted resource is insufficient as a failure mechanism. Likewise,
 retaining only an error counter cannot replace a missing payload.
 
-The representational goal is to fit any arriving content into the small envelope
-somehow. Actual retention reliability remains deployment-funded: concrete storage,
+The representational goal is to associate any arriving content with a valid
+schema-defined record somehow. Actual retention reliability remains deployment-funded: concrete storage,
 capacity and failure handling must support the desired nines and speed. An I/O
 failure does not make the request cease to have reached the gate.
 
