@@ -1,0 +1,2 @@
+name	source	revision	archive_url	archive	sha256	extraction	license_files	reading_status
+perennial-coq	https://github.com/mit-pdos/perennial	3e3e0a484d61d0a15b578f5d5887ead84f145d71	https://codeload.github.com/mit-pdos/perennial/tar.gz/3e3e0a484d61d0a15b578f5d5887ead84f145d71	quarantine/archives/verifiability/perennial-coq-3e3e0a484d61d0a15b578f5d5887ead84f145d71.tar.gz	02cd4d448690f2862e84f00a05f5847b37842a2f980bd4de1b2d8b78b90a3c91	quarantine/sources/verifiability/perennial-coq	LICENSE	source-acquired-unread

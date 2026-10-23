@@ -1,0 +1,3 @@
+id	description	primaryURL	localOriginal	sha256	bytes	readingStatus
+wrong-data-author-page	Original author-group publication page	https://sape.inf.usi.ch/publications/asplos09.html	quarantine/archives/survey-measurement/literature/wrong-data.html	93a45b5ad564adc3d99d22cc9549d55fa14654607d20f377481b6863d9965332	19586	abstract and metadata read
+tailbench-plus-journal	Later journal publisher article HTML; differs from retained preprint	https://link.springer.com/article/10.1186/s13677-026-00908-3	quarantine/archives/survey-measurement/literature/tailbench-plus-journal.html	39a26504fedbf896e78d3fac1d44128d7f4931aad05c61c4f61466d9c5a174ea	367218	selected abstract,intro,lifecycle sections read

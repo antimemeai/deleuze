@@ -1,0 +1,22 @@
+from	to	relationship	evidence_location
+snapshot85	lamport78	cites; event partial order and process/channel model	reference 6 and section 2
+hlc14	lamport78	cites; one-way clock condition	sections 1-3
+hlc14	mattern89	cites; vector clock comparison	section 1.1
+hlc14	spanner12	cites; physical uncertainty and consistent reads	section 1.1 and section 6
+provsurvey09	whywhere01	surveys original why/where notions	overview and referenced literature
+provsurvey09	semirings07	surveys how provenance	section 3.1
+camflow17	prov-dm13	extends conceptual provenance model	section 3
+camflow17	pass06	cites prior whole-system capture	section 4
+camflow17	pass09	cites layered application/system provenance	section 4.5 and references
+camquery18	camflow17	extends capture with runtime graph analysis	introduction
+deltacrdt18	crdt11	extends state-based replication with delta mutators	sections 3-4
+naiad13	differential13	implements differential computation as library	section 4 and reference 28
+flink15	snapshot85	adapts marker snapshot model	sections 2 and 4
+flink15	naiad13	compares recovery approach	section 2
+flink15	dstreams13	compares state recomputation	section 2
+watermarks21	millwheel13	traces watermark implementation lineage	section 3.2
+watermarks21	dataflow15	extends event-time and completeness account	introduction and section 3
+watermarks21	naiad13	contrasts timestamp frontiers	section 3.3
+watermarks21	differential13	nested incremental and iterative use	section 3.3
+verifiedprogress21	progress13	extends earlier distributed clocks proof	introduction, sections 3-4
+verifiedprogress21	naiad13	formalizes progress in its later Rust implementation lineage	section 2 and reference 26

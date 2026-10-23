@@ -1,0 +1,2 @@
+# Empty final TSV fields require trailing tabs; retain those field separators.
+*.tsv text eol=lf whitespace=-blank-at-eol
