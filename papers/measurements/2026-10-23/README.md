@@ -1,5 +1,8 @@
 # First native and network performance baseline
 
+Historical direct-write/per-record-sync reference. Current synchronized
+completion is batched; see [the newer results](../2026-10-23-batched/README.md).
+
 2026-10-23. The native written path reached **594k retained records/s** with
 128-byte payloads and one producer (median of three fresh processes); median
 per-run retained p99 was **3.75µs**. Four producers reduced throughput to

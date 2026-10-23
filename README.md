@@ -49,7 +49,8 @@ the supplied content and says whether a write was attempted with an unknown
 outcome. A write/sync error stops later appends in that instance. Clean files
 can be reopened; damaged files are rejected without changing them. Reads and
 queries currently scan linearly.
-The [first local baseline](papers/measurements/2026-10-23/README.md) records
+The [batched-sync measurements](papers/measurements/2026-10-23-batched/README.md)
+and [first local baseline](papers/measurements/2026-10-23/README.md) record
 throughput, tail latency and failure populations for specific workloads.
 Deployment reliability in nines remains unestablished.
 

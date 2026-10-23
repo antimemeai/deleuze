@@ -1,5 +1,8 @@
 # Batched writes and sync
 
+[Measured results](../papers/measurements/2026-10-23-batched/README.md) cover
+explicit groups, concurrent single appends and the network gates.
+
 `Completion::Written` returns after complete file writes. It is the default and
 keeps single appends on the calling thread. `Completion::Synced` sends owned
 encoded records to a bounded writer that groups them, writes existing record
