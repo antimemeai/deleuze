@@ -14,6 +14,10 @@ HTTP and gRPC gates, native Rust integration and custom adapters will share one
 capture path. Events have a very small, strict record schema and associated
 arbitrary properties outside that schema. Opaque data or references can carry
 otherwise unrepresentable or large content. See [gates and events](design/gates-and-events.md).
+Producers need not construct events: Deleuze packs content at the gate, assigning
+write sequence, property hash and its own record timestamps. Sequence orders log
+writes, not actions. [Record profiles](design/record-profile.md) describe core
+fields and configurable features with proposed defaults.
 Persist event contents only; there is no additional request archive.
 
 The project is in reconnaissance. Existing implementations are being acquired and

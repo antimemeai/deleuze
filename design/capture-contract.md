@@ -12,7 +12,9 @@ copy, or second capture layer. HTTP/gRPC request objects, headers and framing
 are transport machinery rather than a second retained object. This is an explicit
 operator requirement, not a configurable extra fidelity mode.
 
-Ordinary adapters produce the small event's properties. When normal conversion
+Producers normally submit their existing output without constructing Deleuze
+events. Deleuze packs the record at the gate and associates the content's
+properties. When normal conversion
 cannot preserve some content, opaque bytes or a reference represent that content
 instead. A conversion diagnostic alone cannot substitute for it. The same content
 is not also archived beside its properties.
@@ -31,16 +33,17 @@ fields, accompanied by arbitrary property key/value pairs. The property entries
 are data associated with the record; they are not members of the record schema.
 Adding or changing a property key does not add or change a schema field.
 
-The previous `Event { properties }` proposal was a misunderstanding and is
-withdrawn. There is not yet a complete proposed record-field list. Its identity,
-time, source/type and other candidate fields must be chosen explicitly; the
-property representation cannot stand in for those decisions.
+The previous `Event { properties }` proposal is withdrawn. The operator has
+specified core fields: Deleuze assigns `seq` on write, computes `property_hash`
+for integrity, and sets `created_at` for log write. `received_at` is a candidate
+additional Deleuze-assigned gate timestamp. Producer timestamps stay in
+properties; no other program sets record times. **Write sequence does not assign
+any temporal ordering or causality to the described actions.**
 
-A field such as `property_hash` may belong to a particular record schema. It
-would be a defined record field describing associated property data, while the
-property pairs themselves remain outside that schema. The operator offered it
-as a possibility, not a requirement to put an optional hash field in every record.
-No hash algorithm or hashed representation has been selected.
+Event types, producer IDs and support for producer-masked references are configurable features with
+defaults. See [the record profile](record-profile.md) for core semantics, proposed
+defaults and remaining choices. Integer width, time representation, hash
+algorithm and property encoding remain undecided.
 
 This distinction is logical. It does not prescribe inline versus referenced
 storage, a separate table, another event stream, or a second persisted copy.
@@ -60,15 +63,19 @@ property whose key happens to match a record field remains property data. The
 supported interface must make that separation unambiguous, without allocating a
 new record-schema member for each property name.
 
-A property representation must account for arbitrary content without silently
+A property representation must account for the content the producer supplied,
+including producer-masked values, without silently
 rounding numbers, replacing malformed text or losing distinctions its mapping
 promises. Opaque content or references remain available where ordinary conversion
 cannot preserve the content. These replace the affected content representation;
 they do not add a request archive or another event.
 
 Fallback must still produce a valid record under the chosen record schema and
-associate the retained contents with it. The exact field-assignment and fallback
-rules cannot be completed until that schema is chosen. The earlier fallback
+associate the retained contents with it. Masking is the producer's responsibility;
+Deleuze retains supplied masked content and offers configured ABAC-aware reference
+assistance for authorized readers. It does not redact on ingest or fetch unmasked
+source data to construct a fallback. Exact field encodings, extension policies and
+fallback mappings remain to be designed. The earlier fallback
 expressed as a one-field Event with a `content` property is withdrawn with the
 one-field schema; it does not define a special new record shape.
 
@@ -118,7 +125,7 @@ selection remains open.
 ## Ownership begins synchronously
 
 The logical public operation starts capture at invocation and takes responsibility
-for its input before reporting a successful handoff. It can accept a native event,
+for its input before reporting a successful handoff. It can accept native content,
 owned encoded content or a readable stream through the supported interface. These
 representations join one operation, not independent write paths. A real signature
 and runtime integration remain to be designed.

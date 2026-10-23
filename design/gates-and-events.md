@@ -1,12 +1,13 @@
 # Gates, one capture path, and a small event envelope
 
 2026-10-23. Operator requirements and their immediate design implications.
-Storage, concrete schema fields, codecs, frameworks and dependencies remain
-undecided. This is design work, not an implementation plan.
+Core field semantics are defined in [the record profile](record-profile.md).
+Storage, encodings, codecs, frameworks and dependencies remain undecided. This is
+design work, not an implementation plan.
 
 [The capture-contract candidate](capture-contract.md) distinguishes fixed record
 fields from associated arbitrary properties, and develops ownership and failure
-rules. The actual record-field list is still to be chosen.
+rules. The record profile develops gate packing and configurable extensions.
 
 ## The promise begins when a request reaches a gate
 
@@ -55,20 +56,25 @@ as well as the successful path. Native Rust callers use the same capture contrac
 
 An event consists of schema-defined record fields with associated arbitrary
 property key/value pairs. The individual property entries are outside the record
-schema. They do not become new record fields as property keys change. The exact
-record fields still need to be chosen; the former one-field proposal is withdrawn.
+schema. They do not become new record fields as property keys change. The former
+one-field proposal is withdrawn. Producers normally submit existing output;
+Deleuze packs its record at the gate.
 
-A field such as `property_hash` could be part of a record schema without making
-the associated property pairs members of that schema. This is a possibility,
-not a requirement that every record carry that field. The distinction does not
-prescribe separate storage or an additional capture layer.
+Core fields are write-assigned `seq`, `property_hash` and Deleuze's write-time
+`created_at`. Gate-time `received_at` is a candidate. Record timestamps are set
+only by Deleuze; producer timestamps remain properties. Write sequence does not
+imply temporal ordering or causality of the described actions. Event types,
+producer IDs and cooperation with producer-masked data are configurable with
+defaults in the common [record profile](record-profile.md). The producer masks;
+Deleuze can point authorized readers to underlying data when their ABAC permits.
 
 The interface must separate record fields and properties unambiguously. A property
 key matching a record field cannot overwrite that field. Native values and binary
 storage remain the working doctrine; no property value domain, container, encoding
 or hash algorithm is selected here.
 
-Conversion must preserve the event contents under the declared mapping. Content
+Conversion preserves the producer-supplied contents under the declared mapping,
+including any masking the producer already applied. Content
 that cannot fit ordinary properties may use opaque representation or references,
 with a valid record populated according to defined schema rules. A diagnostic is
 not a substitute for retaining the content, and conversion failure does not

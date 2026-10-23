@@ -15,11 +15,19 @@ Ship HTTP and gRPC gates plus interfaces and guidance for custom adapters. The
 promise begins when a request reaches a gate. All integrations use one owned
 capture path; do not expose internals or alternative mutation routes. An event
 has an extremely small, strict record schema with associated arbitrary property
-key/value pairs outside that schema. Property keys are not schema fields. A field
-such as property_hash could belong to a record schema, but is not required by this
-example. The prior Event { properties } proposal is withdrawn. Unknown or
-malformed input must still have a persistable representation; large content
-may use references in properties. See design/gates-and-events.md.
+key/value pairs outside that schema. Producers normally send existing output;
+Deleuze packs it at the gate. Core fields are write-assigned seq, property_hash
+and created_at for log write; received_at is a candidate gate timestamp. Only
+Deleuze sets record timestamps; producer times remain properties. seq describes
+log-write order and emphatically does not order actions in time or imply causality.
+Event types, producer IDs and cooperation with producer-masked data are
+configurable features with defaults; see design/record-profile.md. Producers mask
+data; Deleuze does not redact on ingest. It records the supplied representation
+and can point readers to underlying data only when their ABAC is sufficient.
+Reference assistance defaults to off until configured. property_hash covers the
+properties actually retained. Unknown input still needs a persistable representation.
+Large content may use references in properties. The Event { properties } proposal
+remains withdrawn. See design/gates-and-events.md.
 Persist event contents only. Do not add whole-request archival, duplicate original
 body storage, a second capture layer or mandatory request-lifecycle events.
 The current phase is

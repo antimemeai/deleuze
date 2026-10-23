@@ -33,8 +33,8 @@ The mechanism study has these controlling requirements:
 - Every arrival at the chosen public gate remains in the capture population,
   including full/failing-gate arrivals and retries. Grouping attempts into a
   logical operation is a consumer operation and does not erase arrivals.
-- Preserve the presented data's declared representation. A readable rendering,
-  normalized value or current-state projection cannot silently replace it.
+- Preserve producer-supplied content under its declared mapping, including
+  producer-applied masks. Views must not silently replace retained content.
 - Give caller data an explicit owner through handoff, recording, failure,
   cancellation and shutdown. A producer cannot return and mutate/free storage
   that an asynchronous recorder still needs without a valid ownership protocol.
@@ -62,7 +62,8 @@ possible fault or an unbounded offered load with finite resources.
 | Completion | Return after owned handoff with separately observable progress; wait for the configured persistence boundary | Caller latency and concrete failure exposure. In both cases every gate arrival remains in accounting. |
 | Placement | Embedded engine; collector process; remote retention | Process isolation, IPC/network cost, failure domains, and where each public gate actually is. Moving collection downstream cannot silently move an already declared gate. |
 | Payload and metadata | Typed capture with binary encoding; opaque data with representation/version metadata; owned artifacts where promised | Fidelity, encoding work, schema evolution, payload size and the scope of referenced bytes |
-| Ordering | Producer order, explicit dependency edges, or a global presentation order | The relationships consumers require and the coordination needed to preserve them |
+| Write sequencing | Required monotonic write-assigned seq; physical coordination mechanism open | Scope across writers/logs, restart and failed-write behavior; no action-time or causal inference |
+| Action relationships | Producer-supplied context and times in properties | Consumer interpretations remain separate from the log's write order |
 
 Placement and writer topology are independent choices: a collector can own one
 or several streams, and an embedded engine can also shard. Compare them as such.
@@ -83,10 +84,10 @@ measured. A speedup achieved by sampling, eviction or changing the completion
 promise must be identified as such when comparing capture reliability and cost.
 
 [CORFU, Scalog and FuzzyLog](../papers/survey/durable-logs/report.md) show that
-placement and ordering have different possible relationships. One global atomic
-counter or one globally synchronized timestamp is not yet justified by a stated
-consumer requirement. Nor has the study established that global order is
-unnecessary for all intended consumers.
+placement and ordering have different possible relationships. The operator now
+requires a monotonically increasing write-assigned seq for the log. Physical
+coordination and sequence scope still need design; that sequence emphatically
+does not establish action-time or causal order. Producer times remain properties.
 
 [Verbs-derived objectives](../papers/survey/verifiability/verbs-objectives.md)
 motivate explicit ownership and legal state transitions, narrow checked foreign
@@ -110,6 +111,11 @@ record/property distinction and content ownership rules. Its
 [bounded review](../papers/reviews/capture-contract.md) records the counterexamples
 addressed so far. Event contents are retained once; whole-request archival and
 duplicate original-body storage are excluded by the operator.
+
+The [record profile](record-profile.md) defines gate packing, Deleuze-owned
+seq/hash/write-time fields, the candidate received_at field, and configurable
+event-type, producer-identity and authorized masked-data reference features with
+proposed defaults.
 
 Caller-visible return and persistence milestones still need defined semantics,
 but they cannot narrow the earlier gate-arrival population. The desired nines
