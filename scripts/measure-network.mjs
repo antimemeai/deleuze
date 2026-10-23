@@ -18,14 +18,42 @@ const samples = new Array(count);
 const origin = process.hrtime.bigint();
 const now = () => process.hrtime.bigint() - origin;
 const agent = mode === 'http' ? new http.Agent({ keepAlive: true, maxSockets: cap }) : undefined;
-const session = mode === 'grpc' ? http2.connect(address) : undefined;
-session?.on('error', () => {}); // Per-stream errors become unknown outcomes below.
+const sessions = new Set();
+let currentSession, sessionsCreated = 0;
 let next = 0, active = 0, issued = 0, notSent = 0, protocolErrors = 0;
 let scheduleEnd = 0n;
 let resolveDone;
 const done = new Promise(resolve => { resolveDone = resolve; });
 const counts = { retained: 0, failed: 0, unknown: 0 };
-const responseCodes = {};
+const responseCodes = {}, diagnostics = {};
+const bump = key => { diagnostics[key] = (diagnostics[key] ?? 0) + 1; };
+const errorCode = (error, fallback = 'UNSPECIFIED') => {
+  const code = typeof error === 'string' ? error : error?.code;
+  return typeof code === 'string' && /^[A-Z0-9_]+$/.test(code) ? code : fallback;
+};
+
+function retire(state) {
+  state.accepting = false;
+  // Graceful close allows existing owned streams to finish; no stream is replayed.
+  if (!state.session.closed && !state.session.destroyed) {
+    try { state.session.close(); } catch (error) { bump(`h2_close_error_${errorCode(error)}`); }
+  }
+}
+function sessionForOffer() {
+  if (currentSession?.accepting && !currentSession.session.closed && !currentSession.session.destroyed) return currentSession;
+  // Only a future offered ID creates a replacement. Events never trigger retries.
+  const session = http2.connect(address);
+  const state = { session, accepting: true, closed: false, active: 0 };
+  sessions.add(state);
+  if (sessionsCreated++) bump('h2_sessions_replaced');
+  bump('h2_sessions_created');
+  session.on('goaway', code => { bump('h2_goaway'); bump(`h2_goaway_code_${code}`); retire(state); });
+  session.on('error', error => { bump('h2_session_errors'); bump(`h2_session_error_${errorCode(error)}`); retire(state); });
+  session.on('frameError', (_type, code) => { bump(`h2_frame_error_code_${code}`); retire(state); });
+  session.on('close', () => { state.closed = true; state.accepting = false; sessions.delete(state); bump('h2_sessions_closed'); });
+  currentSession = state;
+  return state;
+}
 
 function metadata(headers) {
   let outcome = headers['deleuze-capture-outcome'];
@@ -42,23 +70,28 @@ function metadata(headers) {
 
 function dispatch(id, due) {
   const start = now();
-  active++;
-  issued++;
-  let finished = false;
-  function finish(result, code) {
+  active++; // Reserve the outstanding slot, even during local construction.
+  let finished = false, handedOff = false, state;
+  function accept() { handedOff = true; issued++; if (state) state.active++; }
+  function finish(result, code, reason = 'RESPONSE_OR_RECEIPT') {
     if (finished) return;
     finished = true;
+    if (result.outcome === 'not_sent') { notSent++; bump(`not_sent_${reason}`); }
+    else {
+      counts[result.outcome]++;
+      if (result.outcome === 'unknown') bump(`unknown_${reason}`);
+    }
     if (code !== undefined) {
       const key = `${mode}_status_${code}`;
       responseCodes[key] = (responseCodes[key] ?? 0) + 1;
     }
     const end = now();
-    counts[result.outcome]++;
     samples[id] = { id, due, start, end, ...result };
     active--;
+    if (state && handedOff) state.active--;
     if (next === count && active === 0) resolveDone();
   }
-  const unknown = () => finish({ outcome: 'unknown', seq: '', hash: '' });
+  const unknown = error => finish({ outcome: 'unknown', seq: '', hash: '' }, undefined, errorCode(error, 'MISSING_REPLY'));
   try {
     const payload = Buffer.alloc(size, 0xa5);
     payload.writeBigUInt64LE(BigInt(id));
@@ -68,7 +101,7 @@ function dispatch(id, due) {
         headers: { 'content-type': 'application/octet-stream', 'content-length': size },
       }, response => {
         response.on('error', unknown);
-        response.on('aborted', unknown);
+        response.on('aborted', () => unknown('RESPONSE_ABORTED'));
         response.resume();
         response.on('end', () => {
           const result = metadata(response.headers);
@@ -76,38 +109,53 @@ function dispatch(id, due) {
           finish(result, response.statusCode);
         });
       });
-      const timer = setTimeout(() => { request.destroy(); unknown(); }, 30_000);
-      request.once('close', () => clearTimeout(timer));
+      accept(); // ClientRequest ownership exists; subsequent errors are unknown.
+      const timer = setTimeout(() => { unknown('CLIENT_TIMEOUT'); request.destroy(); }, 30_000);
+      request.once('close', () => { clearTimeout(timer); if (!finished) unknown('REQUEST_CLOSED'); });
       request.on('error', unknown);
       request.end(payload);
     } else {
-      const request = session.request({
+      state = sessionForOffer();
+      const request = state.session.request({
         ':method': 'POST', ':path': '/deleuze.v1.Capture/Append',
         'content-type': 'application/grpc+deleuze', 'te': 'trailers',
       });
+      // Even a stream awaiting connection/ID now belongs to Node. Failure after
+      // this point does not establish whether the server received its content.
+      accept();
       let headers = {}, status;
       const chunks = [];
       request.on('response', values => { headers = values; });
       request.on('trailers', values => { headers = { ...headers, ...values }; status = values['grpc-status']; });
       request.on('data', bytes => chunks.push(bytes));
-      request.on('error', unknown);
-      const timer = setTimeout(() => { request.close(); unknown(); }, 30_000);
-      request.once('close', () => clearTimeout(timer));
+      request.on('error', error => { bump(`h2_stream_error_${errorCode(error)}`); unknown(error); });
+      const timer = setTimeout(() => { unknown('CLIENT_TIMEOUT'); request.close(); }, 30_000);
+      request.once('close', () => {
+        clearTimeout(timer);
+        if (request.rstCode) bump(`h2_stream_reset_code_${request.rstCode}`);
+        if (!finished) unknown('STREAM_CLOSED');
+      });
       request.on('end', () => {
         const result = metadata(headers);
         if (result.outcome === 'retained' &&
             (headers[':status'] !== 200 || status !== '0' || !Buffer.concat(chunks).equals(Buffer.alloc(5)))) {
           protocolErrors++;
         }
-        finish(result, status ?? "missing");
+        finish(result, status ?? 'missing');
       });
       const prefix = Buffer.alloc(5);
       prefix.writeUInt32BE(size, 1);
       request.write(prefix);
       request.end(payload);
     }
-  } catch {
-    unknown();
+  } catch (error) {
+    if (!handedOff) {
+      if (state) retire(state);
+      finish({ outcome: 'not_sent', seq: '', hash: '' }, undefined, errorCode(error));
+    } else {
+      if (state && (state.session.closed || state.session.destroyed)) retire(state);
+      unknown(error);
+    }
   }
 }
 
@@ -120,6 +168,7 @@ function pump() {
     const id = next++;
     if (active === cap) {
       notSent++;
+      bump('not_sent_outstanding_cap');
       samples[id] = { id, due, start: actual, end: actual, outcome: 'not_sent', seq: '', hash: '' };
     } else dispatch(id, due);
   }
@@ -140,7 +189,11 @@ const end = now();
 // Parent closes/drains the server now; artifact export stays outside its timer.
 console.log('WORKLOAD_COMPLETE');
 agent?.destroy();
-session?.destroy();
+await Promise.all([...sessions].map(state => new Promise(resolve => {
+  if (state.closed) return resolve();
+  state.session.once('close', resolve);
+  state.session.destroy();
+})));
 if (issued + notSent !== count || counts.retained + counts.failed + counts.unknown !== issued || active !== 0) {
   throw new Error('workload population mismatch');
 }
@@ -158,6 +211,6 @@ for (const [key, value] of Object.entries({
   offered: count, issued, not_sent: notSent, completed: issued, pending: active,
   client_retained: counts.retained, client_failed: counts.failed, client_unknown: counts.unknown,
   protocol_errors: protocolErrors, schedule_ns: scheduleEnd.toString(), client_ns: end.toString(),
-  ...responseCodes,
+  ...responseCodes, ...diagnostics,
 })) console.log(`${key}\t${value}`);
 if (protocolErrors) process.exitCode = 1;

@@ -431,7 +431,7 @@ async fn run(config: Config) -> Result<(), Box<dyn std::error::Error>> {
         (
             "connection_model",
             if config.protocol == "grpc" {
-                "one_http2_session"
+                "http2_sessions_rollover_for_future_requests"
             } else {
                 "http1_keepalive_pool"
             }

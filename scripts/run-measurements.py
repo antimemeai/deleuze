@@ -35,6 +35,8 @@ def normalized(name, rep, kind, metrics, resources):
         return next((metrics[key] for key in keys if key in metrics), "")
     row = {key: value(key) for key in [
         "mode", "boundary", "payload_bytes", "producers", "runtime_workers", "gate_in_flight",
+        "h2_sessions_created", "h2_sessions_replaced", "h2_sessions_closed", "h2_goaway", "h2_goaway_code_0", "h2_goaway_code_11",
+        "not_sent_outstanding_cap", "not_sent_ERR_HTTP2_INVALID_SESSION", "not_sent_ERR_HTTP2_GOAWAY_SESSION", "unknown_ERR_HTTP2_SESSION_ERROR",
         "http_status_201", "http_status_503", "grpc_status_0", "grpc_status_8", "grpc_status_14", "grpc_status_3", "grpc_status_missing",
         "client_outstanding", "producer_batch_size", "producer_calls", "batch_max_records", "batch_max_bytes", "batch_max_delay_us", "grouping_model", "offered_rate_s", "offered", "issued", "not_sent", "completed", "pending",
         "client_retained", "client_failed", "client_unknown", "server_arrived", "server_retained",
@@ -70,7 +72,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out-dir", type=Path, required=True)
     parser.add_argument("--repetitions", type=int, default=3)
-    parser.add_argument("--suite", choices=["baseline", "gate-capacity", "batching", "batch-capacity"], default="baseline")
+    parser.add_argument("--suite", choices=["baseline", "gate-capacity", "batching", "batch-capacity", "batch-network"], default="baseline")
     args = parser.parse_args()
     if not 1 <= args.repetitions <= 10:
         parser.error("repetitions must be1..10")
@@ -136,7 +138,7 @@ def main():
                             "--count", str(rate * 2), "--payload-bytes", "128", "--rate", str(rate),
                             "--outstanding", "128", "--gate-in-flight", str(gate), "--sync", "written",
                             "--runtime-workers", "4"]))
-    if args.suite == "batching":
+    if args.suite in ["batching", "batch-network"]:
         cases = []
         for rep in range(1, args.repetitions + 1):
             for mode in ["log", "file"]:
@@ -160,6 +162,8 @@ def main():
                         "target/release/examples/measure_gates", "--protocol", protocol, "--count", str(rate * 2),
                         "--payload-bytes", "128", "--rate", str(rate), "--outstanding", str(cap), "--gate-in-flight", str(gate),
                         "--sync", sync, "--runtime-workers", "4", "--batch-records", "256", "--batch-delay-us", "1000"]))
+    if args.suite == "batch-network":
+        cases = [case for case in cases if case[2] == "batch-network"]
     if args.suite == "batch-capacity":
         cases = []
         for rep in range(1, args.repetitions + 1):

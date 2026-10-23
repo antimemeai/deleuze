@@ -38,3 +38,10 @@ network grouping showed a severe small-gate gRPC limit at10k/s, so a narrow
 64/256 admission-cap comparison will classify actual protocol statuses before
 reporting throughput as an end-to-end improvement. The load generator now counts
 response status codes alongside existing outcome populations.
+
+Two client lifecycle fixtures failed against the old driver and passed after
+correction: future IDs continue on a new session after GOAWAY, with no replay;
+a synchronous INVALID_SESSION before stream creation is NotSent rather than
+Unknown. The client reports session/GOAWAY/error codes and awaits all session
+cleanup. Source/fixture review found no blocker. Historical probe rows remain
+unchanged and labelled; corrected network runs follow from committed source.

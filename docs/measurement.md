@@ -28,8 +28,8 @@ Network mode uses absolute due times, independently of replies. It records
 generator lag, start-to-reply and due-to-reply latency, separately for retained,
 failed and unknown results. When the client outstanding cap is full, an offer is
 not sent and remains in the reported workload. Gate rejections remain server
-failures. There are no retries. HTTP uses a keep-alive pool; gRPC uses one HTTP/2
-session. The default gate runner uses four Tokio workers.
+failures. There are no retries. HTTP uses a keep-alive pool; gRPC replaces retired HTTP/2 sessions for future offers; it never replays an
+existing ID. Session/GOAWAY/error counts are reported. The default gate runner uses four Tokio workers.
 
 The server throughput window starts before Node process launch and ends after
 gate shutdown/drain. Client startup is included; raw sample export does not
@@ -80,3 +80,9 @@ The earlier report's per-record-sync numbers remain historical. Reproduce those
 original semantics at its recorded source revisions; current Synced behavior
 groups calls. The old commands are not a claim that the current default still
 uses one synchronization per record.
+
+`--suite batch-network` reruns the network portion with current client session
+lifecycle handling. Proven constructor rejection before a stream exists is
+not-sent; missing results after stream creation remain unknown. Older single-
+session probes are preserved as diagnostics and do not establish steady server
+capacity after that session closes.
