@@ -1,0 +1,26 @@
+metric	value
+source_revision	8f2dba12277e0a1473edec91ce3dd609327daac9
+cargo_lock_sha256	963dd82bac4ad04b3b22f08fcd69b4f5c35a7ed979c7d5150612b555eb5f71cf
+rustc	rustc 1.94.1 (e408947bf 2026-03-25) | binary: rustc | commit-hash: e408947bfd200af42db322daf0fadfe7e26d3bd1 | commit-date: 2026-03-25 | host: aarch64-apple-darwin | release: 1.94.1 | LLVM version: 21.1.8
+node	v24.7.0
+os	Darwin 25.6.0
+arch	arm64
+free_bytes_before	24982519808
+native_build	cargo build --release --example measure_native
+network_build	cargo build --release --features gates --example measure_gates
+warmup	none; fresh process per run
+order_seed	108
+environment_control	same host; no affinity, cache flush or background-load isolation
+resource_scope	time process totals include artifact export and reconciliation; not capture-only CPU
+hw.model	Mac16,5
+hw.memsize	137438953472
+hw.physicalcpu	16
+hw.logicalcpu	16
+machdep.cpu.brand_string	Apple M4 Max
+macos	26.6
+storage.FilesystemType	apfs
+storage.Internal	True
+storage.SolidState	True
+storage.TotalSize	1995218165760
+storage.APFSContainerFree	24982515712
+free_bytes_after	24041308160
