@@ -46,13 +46,13 @@ Shared response headers describe capture independently from protocol status:
 | Header | Meaning |
 | --- | --- |
 | `deleuze-capture-outcome` | `retained`, `failed` or `unknown` for the whole request. |
-| `deleuze-seq` | Last record written by this request, when one exists. |
+| `deleuze-seq` | Last successful append from this request, when one exists. |
 | `deleuze-property-hash` | That record's BLAKE3 property digest in hexadecimal. |
 | `deleuze-created-at-seconds` | Deleuze's signed Unix write-start seconds. |
 | `deleuze-created-at-nanos` | Normalized fractional nanoseconds. |
 
 A protocol-invalid multi-message unary call may retain several payload records.
-Its receipt describes the last one; its gRPC status remains nonzero. A later
+Its receipt describes the last successful append; its gRPC status remains nonzero. A later
 successful message never erases an earlier failed or uncertain capture.
 There is no additional request, body archive or parent lifecycle record.
 

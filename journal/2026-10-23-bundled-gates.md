@@ -31,3 +31,17 @@ was committed/pushed as its own milestone. The live polyglot check then passed:
 Python and Node each submitted HTTP and gRPC content to a real listener. Native
 reads matched all four payloads exactly (including binary, malformed and empty
 content); receipt sequences/hashes and request/record counts matched too.
+
+Source review corrected six content/protocol regressions, each observed red
+before correction: HTTP route classification, media casing, HTTP/gRPC coding
+hints, outer HTTP coding before framing and uncompressed flag0 labeling. All
+18 direct gate tests passed. The fixes/tests were committed and pushed together,
+and the live four-case polyglot check passed again after these source changes.
+Independent closure review found no remaining concrete blocker.
+
+Final checks passed: 39 all-feature runtime tests and three compile-fail
+doctests; native-only 20 runtime tests and its doctests; formatting and Clippy
+with warnings denied. The opt-in live polyglot test and two client fixtures pass
+separately. No benchmark or reliability-nines result is claimed. Capture/latency/
+cost measurement and pre-service parser observation remain tracked research;
+optional profile extensions and publication remain separate issues.
