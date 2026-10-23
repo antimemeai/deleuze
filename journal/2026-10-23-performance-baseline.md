@@ -23,3 +23,9 @@ fixture reported all 3,000 arrivals (2,581 retained, 419 failed). These are acco
 checks, not published capacity measurements. Example tests, formatting and
 Clippy pass before the main matrix. Full artifacts remain ignored; compact
 results and reproducible commands will be retained with the report.
+
+The first 72-run release matrix completed from committed source8f2dba1. All
+post-timing identities/receipts/populations reconciled; no unknown outcomes
+occurred. Higher offered rates exposed server rejections and client not-sent
+work. A second randomized24-run suite compares gate limits64 and256 with the
+same client128 window before recommending any production change.

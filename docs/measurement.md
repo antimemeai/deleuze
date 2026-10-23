@@ -44,6 +44,10 @@ Run the initial sequential matrix from a clean committed checkout:
 python3 scripts/run-measurements.py --out-dir target/measurements/baseline-new --repetitions 3
 ```
 
+Add `--suite gate-capacity` to compare gate limits64 and256 at the same 128
+client outstanding limit and10k/40k offered rates. Server rejection can move to
+client not-sent work; compare both populations.
+
 This builds release binaries, randomizes a reproducible order, and records the
 source revision, lock hash, hardware/OS, storage facts, commands and compact CSV.
 It also captures whole-process resource output where available; that CPU/resource

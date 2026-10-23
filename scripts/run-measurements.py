@@ -69,6 +69,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out-dir", type=Path, required=True)
     parser.add_argument("--repetitions", type=int, default=3)
+    parser.add_argument("--suite", choices=["baseline", "gate-capacity"], default="baseline")
     args = parser.parse_args()
     if not 1 <= args.repetitions <= 10:
         parser.error("repetitions must be1..10")
@@ -84,7 +85,7 @@ def main():
         "free_bytes_before": str(os.statvfs(".").f_bavail * os.statvfs(".").f_frsize),
         "native_build": "cargo build --release --example measure_native",
         "network_build": "cargo build --release --features gates --example measure_gates",
-        "warmup": "none; fresh process per run", "order_seed": "108",
+        "warmup": "none; fresh process per run", "order_seed": "108", "suite": args.suite,
         "environment_control": "same host; no affinity, cache flush or background-load isolation",
         "resource_scope": "time process totals include artifact export and reconciliation; not capture-only CPU",
     }
@@ -123,6 +124,17 @@ def main():
                     "target/release/examples/measure_gates", "--protocol", protocol, "--count", str(count),
                     "--payload-bytes", "128", "--rate", str(rate), "--outstanding", str(cap),
                     "--gate-in-flight", str(gate), "--sync", sync, "--runtime-workers", "4"]))
+    if args.suite == "gate-capacity":
+        cases = []
+        for rep in range(1, args.repetitions + 1):
+            for protocol in ["http", "grpc"]:
+                for rate in [10_000, 40_000]:
+                    for gate in [64, 256]:
+                        cases.append((f"{protocol}-capacity-{gate}-{rate}-r{rep}", rep, "capacity", [
+                            "target/release/examples/measure_gates", "--protocol", protocol,
+                            "--count", str(rate * 2), "--payload-bytes", "128", "--rate", str(rate),
+                            "--outstanding", "128", "--gate-in-flight", str(gate), "--sync", "written",
+                            "--runtime-workers", "4"]))
     random.Random(108).shuffle(cases)
     rows = []
     with (args.out_dir / "commands.tsv").open("x") as manifest:
