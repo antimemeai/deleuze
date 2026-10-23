@@ -11,6 +11,12 @@ nines. Assess throughput and tail latency alongside retention reliability and
 cost. Full/failing-gate arrivals remain within scope; do not redefine completeness
 as only successfully admitted events. Support Rust integration and polyglot
 interfaces. World-state acquisition/evals are consumers of the retained stream.
+Ship HTTP and gRPC gates plus interfaces and guidance for custom adapters. The
+promise begins when a request reaches a gate. All integrations use one owned
+capture path; do not expose internals or alternative mutation routes. Event
+content uses arbitrary properties on an extremely small, strict schema. Unknown
+or malformed input must still have a persistable representation; large content
+may use references in properties. See design/gates-and-events.md.
 The current phase is
 source acquisition and research, before design and implementation. Preserve source
 snapshots in ignored `quarantine/` and put tracked acquisition manifests in

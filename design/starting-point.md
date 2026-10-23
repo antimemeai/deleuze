@@ -99,13 +99,20 @@ boundaries, and obligations discharged without repeated event-time work where
 possible. Concurrency and persistence ordering require evidence beyond what
 the unfinished Verbs tool currently covers.
 
-## The first discussion
+## Gate and event requirements
 
-Start with what an emission call should promise when it returns and what the
-deployment must survive. An inexpensive handoff leaves work in flight; waiting
-for synchronized local or replicated storage pays for a different boundary.
-The desired nines concern all arrivals, so loss before completion remains part
-of the reliability assessment under either interface.
+The operator clarified that the promise begins with a request reaching a gate.
+Ship HTTP and gRPC gates, native Rust integration and custom-adapter interfaces
+and guidance. All integrations use one capture path with no access to engine
+internals. Content arrives as arbitrary properties on an extremely small, strict
+event envelope; unfamiliar or malformed input must still be representable and
+persistable somehow. Large content can use property references. See
+[gates and events](gates-and-events.md) for the requirements and unresolved
+representation, ownership and artifact questions.
+
+Caller-visible return and persistence milestones still need defined semantics,
+but they cannot narrow the earlier gate-arrival population. The desired nines
+concern all arrivals, including losses before a completion boundary.
 
 We can then compare concrete candidates against the same workload and failure
 model: event sizes and representations, producer concurrency, sustained/burst

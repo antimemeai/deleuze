@@ -10,6 +10,11 @@ Deleuze will support native Rust integration and polyglot interfaces. World-stat
 acquisition and evaluation fidelity are uses of the retained stream. Its capture
 responsibility begins at the gate.
 
+HTTP and gRPC gates, native Rust integration and custom adapters will share one
+capture path. Event content uses arbitrary properties on a very small, strict
+envelope, with opaque data or references available for otherwise unrepresentable
+or large content. See [gates and events](design/gates-and-events.md).
+
 The project is in reconnaissance. Existing implementations are being acquired and
 read before we choose a design, storage format, interfaces, or dependencies.
 
