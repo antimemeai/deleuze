@@ -3,13 +3,13 @@
 //! response latency. File mode is a frame-sized I/O floor without log semantics.
 mod measure_support;
 
-use deleuze::{AppendOutcome, Log, Options, Query, Value};
+use deleuze::{AppendOutcome, BatchOptions, Completion, Content, Log, Options, Query, Value};
 use measure_support::{
     Outcome, Sample, make_payload, nearest_rank, verify_payload, write_samples, write_summary,
 };
 use std::collections::BTreeSet;
 use std::fs::{File, OpenOptions};
-use std::io::{self, Read, Write};
+use std::io::{self, IoSlice, Read, Write};
 use std::path::PathBuf;
 use std::sync::{Arc, Barrier, Mutex, OnceLock};
 use std::time::{Duration, Instant};
@@ -28,12 +28,18 @@ struct Args {
     payload: usize,
     producers: usize,
     synced: bool,
+    batch_size: usize,
+    batch_records: usize,
+    batch_bytes: usize,
+    batch_delay_us: u64,
 }
 impl Args {
     fn parse(arguments: impl Iterator<Item = String>) -> io::Result<Self> {
         let mut mode = None;
         let mut out = None;
         let (mut count, mut payload, mut producers, mut synced) = (10_000, 128, 1, false);
+        let (mut batch_size, mut batch_records, mut batch_bytes, mut batch_delay_us) =
+            (1, 256, 1024 * 1024, 1000);
         let mut args = arguments;
         while let Some(flag) = args.next() {
             let value = args
@@ -57,6 +63,22 @@ impl Args {
                         .parse()
                         .map_err(|_| invalid("invalid producer count"))?
                 }
+                "--batch-size" => {
+                    batch_size = value.parse().map_err(|_| invalid("invalid batch size"))?
+                }
+                "--batch-records" => {
+                    batch_records = value
+                        .parse()
+                        .map_err(|_| invalid("invalid batch record bound"))?
+                }
+                "--batch-bytes" => {
+                    batch_bytes = value
+                        .parse()
+                        .map_err(|_| invalid("invalid batch byte bound"))?
+                }
+                "--batch-delay-us" => {
+                    batch_delay_us = value.parse().map_err(|_| invalid("invalid batch delay"))?
+                }
                 "--sync" => {
                     synced = match value.as_str() {
                         "written" => false,
@@ -74,6 +96,10 @@ impl Args {
             payload,
             producers,
             synced,
+            batch_size,
+            batch_records,
+            batch_bytes,
+            batch_delay_us,
         };
         result.validate()?;
         Ok(result)
@@ -83,6 +109,11 @@ impl Args {
             || !(8..=1024 * 1024).contains(&self.payload)
             || !(1..=128).contains(&self.producers)
             || self.producers as u64 > self.count
+            || !(1..=65_536).contains(&self.batch_size)
+            || !(1..=65_536).contains(&self.batch_records)
+            || self.batch_bytes == 0
+            || self.batch_bytes > 64 * 1024 * 1024
+            || self.batch_delay_us > 1_000_000
         {
             return Err(invalid(
                 "require count1..1M, payload8..1MiB, producers1..128 and producers<=count",
@@ -181,6 +212,93 @@ impl Sink {
     }
 }
 
+fn write_floor_batch(file: &mut File, frames: &[Vec<u8>]) -> io::Result<()> {
+    let mut slices: Vec<_> = frames.iter().map(|bytes| IoSlice::new(bytes)).collect();
+    let mut remaining = slices.as_mut_slice();
+    while !remaining.is_empty() {
+        match file.write_vectored(remaining) {
+            Ok(0) => {
+                return Err(io::Error::new(
+                    io::ErrorKind::WriteZero,
+                    "zero-length batch write",
+                ));
+            }
+            Ok(written) => IoSlice::advance_slices(&mut remaining, written),
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => (),
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(())
+}
+impl Sink {
+    fn issue_batch(
+        &self,
+        ids: &[u64],
+        payload: usize,
+        synced: bool,
+    ) -> Vec<(Outcome, Option<u64>, Option<[u8; 32]>)> {
+        let width = payload
+            + if matches!(self, Self::File(_)) {
+                OVERHEAD
+            } else {
+                0
+            };
+        let frames = match ids
+            .iter()
+            .map(|id| make_payload(*id, width))
+            .collect::<io::Result<Vec<_>>>()
+        {
+            Ok(frames) => frames,
+            Err(_) => return vec![(Outcome::NotSent, None, None); ids.len()],
+        };
+        match self {
+            Self::Log(log) => log
+                .append_batch(frames.into_iter().map(Content::Bytes).collect())
+                .into_iter()
+                .map(|result| match result {
+                    Ok(record) => (
+                        Outcome::Retained,
+                        Some(record.seq()),
+                        Some(*record.property_hash()),
+                    ),
+                    Err(error) => (
+                        if error.outcome == AppendOutcome::Unknown {
+                            Outcome::Unknown
+                        } else {
+                            Outcome::Failed
+                        },
+                        None,
+                        None,
+                    ),
+                })
+                .collect(),
+            Self::File(floor) => {
+                let mut floor = match floor.lock() {
+                    Ok(floor) => floor,
+                    Err(_) => return vec![(Outcome::Failed, None, None); ids.len()],
+                };
+                if floor.stopped {
+                    return vec![(Outcome::Failed, None, None); ids.len()];
+                }
+                let result = write_floor_batch(&mut floor.file, &frames).and_then(|()| {
+                    if synced {
+                        floor.file.sync_all()
+                    } else {
+                        Ok(())
+                    }
+                });
+                let outcome = if result.is_ok() {
+                    Outcome::Retained
+                } else {
+                    floor.stopped = true;
+                    Outcome::Unknown
+                };
+                vec![(outcome, None, None); ids.len()]
+            }
+        }
+    }
+}
+
 fn measure(args: &Args, sink: &Sink) -> io::Result<(Vec<Sample>, u64)> {
     // Allocate sample storage before releasing producers. Payload allocation and
     // ID stamping happen in issue(), inside each individual operation timer.
@@ -199,24 +317,55 @@ fn measure(args: &Args, sink: &Sink) -> io::Result<(Vec<Sample>, u64)> {
     let mut threads = Vec::new();
     for (worker, quota, mut samples) in buffers {
         let (start, barrier, sink) = (Arc::clone(&start), Arc::clone(&barrier), sink.clone());
-        let (payload, producers, synced) = (args.payload, args.producers as u64, args.synced);
+        let (payload, producers, synced, batch_size) = (
+            args.payload,
+            args.producers as u64,
+            args.synced,
+            args.batch_size,
+        );
         threads.push(std::thread::spawn(move || {
             barrier.wait();
             let start = *start.get().expect("origin set before barrier");
-            for ordinal in 0..quota {
-                let id = worker + ordinal * producers;
-                let start_ns = ns(start.elapsed());
-                let (outcome, seq, hash) = sink.issue(id, payload, synced);
-                let end_ns = ns(start.elapsed());
-                samples.push(Sample {
-                    id,
-                    due_ns: start_ns,
-                    start_ns,
-                    end_ns,
-                    outcome,
-                    seq,
-                    hash,
-                });
+            if batch_size == 1 {
+                for ordinal in 0..quota {
+                    let id = worker + ordinal * producers;
+                    let start_ns = ns(start.elapsed());
+                    let (outcome, seq, hash) = sink.issue(id, payload, synced);
+                    let end_ns = ns(start.elapsed());
+                    samples.push(Sample {
+                        id,
+                        due_ns: start_ns,
+                        start_ns,
+                        end_ns,
+                        outcome,
+                        seq,
+                        hash,
+                    });
+                }
+            } else {
+                let mut ordinal = 0;
+                while ordinal < quota {
+                    let start_ns = ns(start.elapsed());
+                    let count = (quota - ordinal).min(batch_size as u64);
+                    let ids: Vec<_> = (ordinal..ordinal + count)
+                        .map(|n| worker + n * producers)
+                        .collect();
+                    let results = sink.issue_batch(&ids, payload, synced);
+                    let end_ns = ns(start.elapsed());
+                    assert_eq!(results.len(), ids.len(), "batch result count");
+                    for (id, (outcome, seq, hash)) in ids.into_iter().zip(results) {
+                        samples.push(Sample {
+                            id,
+                            due_ns: start_ns,
+                            start_ns,
+                            end_ns,
+                            outcome,
+                            seq,
+                            hash,
+                        });
+                    }
+                    ordinal += count;
+                }
             }
             samples
         }));
@@ -367,7 +516,17 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         Mode::Log => Sink::Log(Arc::new(Log::open(
             &data_path,
             Options {
-                sync_each_append: args.synced,
+                completion: if args.synced {
+                    Completion::Synced
+                } else {
+                    Completion::Written
+                },
+                batch: BatchOptions {
+                    max_records: args.batch_records,
+                    max_bytes: args.batch_bytes,
+                    max_delay: Duration::from_micros(args.batch_delay_us),
+                    ..BatchOptions::default()
+                },
                 max_query_records: (args.count + 1) as u32,
                 max_query_bytes: (args.count + 1) * (args.payload as u64 + 32),
                 ..Options::default()
@@ -415,7 +574,12 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         ("warmup".into(), "none".into()),
         (
             "operation_timer".into(),
-            "input_allocation_id_stamp_and_complete_call".into(),
+            if args.batch_size == 1 {
+                "input_allocation_id_stamp_and_complete_call"
+            } else {
+                "bulk_input_preparation_through_batch_return_per_member"
+            }
+            .into(),
         ),
         (
             "throughput_window".into(),
@@ -432,6 +596,10 @@ fn run(args: Args) -> Result<(), Box<dyn std::error::Error>> {
         ),
         ("payload_bytes".into(), args.payload.to_string()),
         ("producers".into(), args.producers.to_string()),
+        ("producer_batch_size".into(), args.batch_size.to_string()),
+        ("batch_max_records".into(), args.batch_records.to_string()),
+        ("batch_max_bytes".into(), args.batch_bytes.to_string()),
+        ("batch_max_delay_us".into(), args.batch_delay_us.to_string()),
         ("offered".into(), args.count.to_string()),
         ("issued".into(), (args.count - not_sent).to_string()),
         ("not_sent".into(), not_sent.to_string()),
@@ -578,6 +746,10 @@ mod tests {
             payload,
             producers,
             synced: false,
+            batch_size: 1,
+            batch_records: 256,
+            batch_bytes: 1024 * 1024,
+            batch_delay_us: 1000,
         };
         for args in [
             base(0, 128, 1),
@@ -602,7 +774,12 @@ mod tests {
                 .unwrap()
                 .as_nanos()
         ));
-        for (name, mode, synced) in [("log", Mode::Log, false), ("floor", Mode::File, true)] {
+        for (name, mode, synced, batch_size) in [
+            ("log", Mode::Log, false, 1),
+            ("floor", Mode::File, true, 1),
+            ("log-batch", Mode::Log, true, 3),
+            ("floor-batch", Mode::File, true, 3),
+        ] {
             let out = root.join(name);
             let args = Args {
                 mode,
@@ -611,6 +788,10 @@ mod tests {
                 payload: 128,
                 producers: 3,
                 synced,
+                batch_size,
+                batch_records: 256,
+                batch_bytes: 1024 * 1024,
+                batch_delay_us: 1000,
             };
             run(args).unwrap();
             let samples = measure_support::read_samples(out.join("samples.tsv")).unwrap();
@@ -640,7 +821,11 @@ mod tests {
                     count: 8,
                     payload: 128,
                     producers: 3,
-                    synced
+                    synced,
+                    batch_size,
+                    batch_records: 256,
+                    batch_bytes: 1024 * 1024,
+                    batch_delay_us: 1000,
                 })
                 .is_err()
             );
@@ -694,6 +879,10 @@ mod extra_record_regression {
             payload: 128,
             producers: 1,
             synced: false,
+            batch_size: 1,
+            batch_records: 256,
+            batch_bytes: 1024 * 1024,
+            batch_delay_us: 1000,
         };
         let sink = Sink::Log(log);
         let result = reconcile(&args, &sink, &path, &samples);

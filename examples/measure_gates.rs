@@ -2,7 +2,7 @@
 mod measure_support;
 
 use deleuze::gates::{Gate, GateOptions};
-use deleuze::{Entry, Log, Options, Query, Value};
+use deleuze::{BatchOptions, Completion, Entry, Log, Options, Query, Value};
 use measure_support::{Outcome, Sample};
 use std::collections::BTreeMap;
 use std::io::{self, BufRead, Read};
@@ -23,6 +23,9 @@ struct Config {
     gate_capacity: usize,
     workers: usize,
     synced: bool,
+    batch_records: usize,
+    batch_bytes: usize,
+    batch_delay_us: u64,
 }
 impl Config {
     fn parse() -> Result<Self, Box<dyn std::error::Error>> {
@@ -66,6 +69,18 @@ impl Config {
             .remove("--runtime-workers")
             .unwrap_or_else(|| "4".into())
             .parse::<usize>()?;
+        let batch_records = pairs
+            .remove("--batch-records")
+            .unwrap_or_else(|| "256".into())
+            .parse::<usize>()?;
+        let batch_bytes = pairs
+            .remove("--batch-bytes")
+            .unwrap_or_else(|| "1048576".into())
+            .parse::<usize>()?;
+        let batch_delay_us = pairs
+            .remove("--batch-delay-us")
+            .unwrap_or_else(|| "1000".into())
+            .parse::<u64>()?;
         let synced = match pairs.remove("--sync").as_deref().unwrap_or("written") {
             "written" => false,
             "synced" => true,
@@ -79,6 +94,9 @@ impl Config {
             || !(1..=4096).contains(&outstanding)
             || !(1..=4096).contains(&gate_capacity)
             || !(1..=64).contains(&workers)
+            || !(1..=65_536).contains(&batch_records)
+            || !(1..=64 * 1024 * 1024).contains(&batch_bytes)
+            || batch_delay_us > 1_000_000
             || count
                 .checked_mul(size + 108)
                 .is_none_or(|n| n > 1024 * 1024 * 1024)
@@ -95,6 +113,9 @@ impl Config {
             gate_capacity,
             workers,
             synced,
+            batch_records,
+            batch_bytes,
+            batch_delay_us,
         })
     }
 }
@@ -151,7 +172,17 @@ async fn run(config: Config) -> Result<(), Box<dyn std::error::Error>> {
     let log = Arc::new(Log::open(
         output.join("append.dlz"),
         Options {
-            sync_each_append: config.synced,
+            completion: if config.synced {
+                Completion::Synced
+            } else {
+                Completion::Written
+            },
+            batch: BatchOptions {
+                max_records: config.batch_records,
+                max_bytes: config.batch_bytes,
+                max_delay: std::time::Duration::from_micros(config.batch_delay_us),
+                ..BatchOptions::default()
+            },
             max_query_records: config.count as u32 + 1,
             max_query_bytes: (config.count as u64 + 1) * (config.size as u64 + 200),
             ..Options::default()
@@ -375,6 +406,9 @@ async fn run(config: Config) -> Result<(), Box<dyn std::error::Error>> {
         ("client_outstanding", config.outstanding.to_string()),
         ("gate_in_flight", config.gate_capacity.to_string()),
         ("runtime_workers", config.workers.to_string()),
+        ("batch_max_records", config.batch_records.to_string()),
+        ("batch_max_bytes", config.batch_bytes.to_string()),
+        ("batch_max_delay_us", config.batch_delay_us.to_string()),
         ("server_arrived", stats.arrived.to_string()),
         ("server_retained", stats.retained.to_string()),
         ("server_failed", stats.failed.to_string()),

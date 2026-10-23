@@ -466,7 +466,7 @@ fn explicit_sync_mode_writes_a_readable_record() {
     let log = Log::open(
         temp.file(),
         Options {
-            sync_each_append: true,
+            completion: deleuze::Completion::Synced,
             ..Options::default()
         },
     )

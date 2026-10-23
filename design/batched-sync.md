@@ -32,9 +32,11 @@ and queued encoded work as documented; they are not an exact process-RSS bound.
 
 Use one internal bounded std-channel writer only in Synced mode. It owns encoded
 submissions, batches by count/bytes/oldest enqueue age, then invokes the shared
-native batch-write routine and completes waiters. Check age before adding more
-work: continuous input must not postpone a flush forever. Do not reset the oldest
-collection deadline on each new submission. Delay bounds intentional collection,
+native batch-write routine and completes waiters. Drain already-ready submissions up to the count/byte caps even when their oldest
+queue age exceeds the delay (for example during a previous sync). The deadline
+bounds waiting for additional work when the queue is empty, not draining ready
+work. Do not reset the oldest collection deadline on each new submission; bounded
+caps prevent a continuous stream from postponing flush forever. Delay bounds intentional collection,
 not I/O time or scheduler delay. A group that does not fit is carried to the next
 batch; retain ownership, order and its original age.
 
@@ -51,7 +53,9 @@ Drop closes the worker channel, drains owned work and joins it before releasing
 storage. The worker must not own Log itself and create a reference cycle. A
 reply receiver disappearing never cancels its owned record. A failed worker or
 closed/full queue reports stopped/full with recoverable input; do not leave
-waiters blocked forever. Use byte permits for queued/in-flight encoded frames,
+waiters blocked forever. Once handoff succeeds, a lost worker reply is Unknown,
+unless an explicit worker result proves no I/O occurred. Rejected handoffs stay
+NotWritten. Use byte permits for queued/in-flight encoded frames,
 released on every success, failure and rejected handoff.
 
 ## Records, writes and ordinary errors

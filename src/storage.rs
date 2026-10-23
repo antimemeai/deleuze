@@ -1,6 +1,6 @@
 use crate::{AppendOutcome, Entry, Error, Options, Record, WriteTime, codec};
 use std::fs::{File, OpenOptions, TryLockError};
-use std::io::{self, Read, Write};
+use std::io::{self, IoSlice, Read, Write};
 use std::path::{Path, PathBuf};
 
 pub(crate) const HEADER_LEN: usize = 64;
@@ -21,14 +21,25 @@ impl<W: Write> Writer<W> {
         sync: bool,
         synchronize: impl FnOnce(&mut W) -> io::Result<()>,
     ) -> Result<(), (AppendOutcome, Error)> {
+        self.write_group(&[frame], seq, sync, synchronize)
+    }
+    fn write_group(
+        &mut self,
+        frames: &[&[u8]],
+        last_seq: u64,
+        sync: bool,
+        synchronize: impl FnOnce(&mut W) -> io::Result<()>,
+    ) -> Result<(), (AppendOutcome, Error)> {
         if self.stopped {
             return Err((AppendOutcome::NotWritten, Error::Stopped));
         }
-        let end = self
-            .published_end
-            .checked_add(frame.len() as u64)
+        let end = frames
+            .iter()
+            .try_fold(self.published_end, |end, frame| {
+                end.checked_add(frame.len() as u64)
+            })
             .ok_or((AppendOutcome::NotWritten, Error::TooLarge))?;
-        if let Err(error) = self.io.write_all(frame).and_then(|()| {
+        if let Err(error) = write_frames(&mut self.io, frames).and_then(|()| {
             if sync {
                 synchronize(&mut self.io)
             } else {
@@ -39,9 +50,96 @@ impl<W: Write> Writer<W> {
             return Err((AppendOutcome::Unknown, Error::Io(error)));
         }
         self.published_end = end;
-        self.next = seq.checked_add(1);
+        self.next = last_seq.checked_add(1);
         Ok(())
     }
+    pub(crate) fn append_prepared(
+        &mut self,
+        frames: &mut [crate::batch::Prepared],
+        sync: bool,
+        synchronize: impl FnOnce(&mut W) -> io::Result<()>,
+    ) -> Vec<crate::batch::FrameResult> {
+        use crate::batch::failures;
+        let count = frames.len();
+        if count == 0 {
+            return Vec::new();
+        }
+        if self.stopped {
+            return failures(AppendOutcome::NotWritten, Error::Stopped, count);
+        }
+        if self.next.is_none() {
+            return failures(AppendOutcome::NotWritten, Error::SequenceExhausted, count);
+        }
+        let created_at = match crate::write_time(std::time::SystemTime::now()) {
+            Ok(time) => time,
+            Err(error) => return failures(AppendOutcome::NotWritten, error, count),
+        };
+        let mut next = self.next;
+        let mut records = Vec::new();
+        for frame in frames.iter_mut() {
+            let Some(seq) = next else {
+                break;
+            };
+            let record = Record {
+                seq,
+                property_hash: frame.hash,
+                created_at,
+            };
+            fill_frame(&mut frame.frame, &record);
+            records.push(record);
+            next = seq.checked_add(1);
+        }
+        let attempted = records.len();
+        let slices: Vec<_> = frames[..attempted]
+            .iter()
+            .map(|frame| frame.frame.as_slice())
+            .collect();
+        let mut results = match self.write_group(
+            &slices,
+            records.last().expect("at least one sequence").seq,
+            sync,
+            synchronize,
+        ) {
+            Ok(()) => records.into_iter().map(Ok).collect(),
+            Err((outcome, error)) => failures(outcome, error, attempted),
+        };
+        results.extend(failures(
+            AppendOutcome::NotWritten,
+            Error::SequenceExhausted,
+            count - attempted,
+        ));
+        results
+    }
+}
+
+fn write_frames(writer: &mut impl Write, frames: &[&[u8]]) -> io::Result<()> {
+    if let [frame] = frames {
+        return writer.write_all(frame);
+    }
+    let (mut index, mut offset) = (0, 0);
+    while index < frames.len() {
+        let slices: Vec<_> = frames[index..]
+            .iter()
+            .take(64)
+            .enumerate()
+            .map(|(n, frame)| IoSlice::new(if n == 0 { &frame[offset..] } else { frame }))
+            .collect();
+        let written = match writer.write_vectored(&slices) {
+            Err(e) if e.kind() == io::ErrorKind::Interrupted => continue,
+            result => result?,
+        };
+        if written == 0 {
+            return Err(io::Error::from(io::ErrorKind::WriteZero));
+        }
+        let mut remaining = written;
+        while index < frames.len() && remaining >= frames[index].len() - offset {
+            remaining -= frames[index].len() - offset;
+            index += 1;
+            offset = 0;
+        }
+        offset += remaining;
+    }
+    Ok(())
 }
 
 pub(crate) fn fill_frame(frame: &mut [u8], record: &Record) {

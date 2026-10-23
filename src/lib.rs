@@ -3,7 +3,7 @@
 //! Deleuze assigns write sequence, property hash and write-start time. Producer
 //! times remain properties. Sequence orders file writes, not actions or causes.
 //! The default completes full writes without synchronizing each record; enabling
-//! [`Options::sync_each_append`] additionally calls [`std::fs::File::sync_all`].
+//! [`Completion::Synced`] groups appends behind ordinary file synchronization.
 //! Neither mode promises power-loss recovery. Damaged files are rejected unchanged.
 //!
 //! All fields of [`Record`] and [`WriteTime`] are read-only through the API.
@@ -17,6 +17,7 @@
 //! fn change(time: &mut deleuze::WriteTime) { time.nanos = 1; }
 //! ```
 
+mod batch;
 mod codec;
 mod storage;
 
@@ -26,8 +27,8 @@ pub mod gates;
 use std::fmt;
 use std::io;
 use std::path::Path;
-use std::sync::Mutex;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 /// Ordered property entries. Duplicate names are preserved.
 pub type Properties = Vec<(String, Value)>;
@@ -79,10 +80,63 @@ pub enum Value {
     },
 }
 
+/// Successful complete writes, or complete writes followed by group synchronization.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Completion {
+    #[default]
+    Written,
+    Synced,
+}
+
+/// Batch targets and encoded-work admission bounds. Pending limits count active
+/// and queued submissions; they do not bound caller input or exact process RSS.
+#[derive(Debug, Clone, Copy)]
+pub struct BatchOptions {
+    pub max_records: usize,
+    pub max_bytes: usize,
+    /// Intentional collection delay, not a bound on I/O or scheduling delay.
+    pub max_delay: Duration,
+    pub max_pending_batches: usize,
+    pub max_pending_bytes: usize,
+}
+impl Default for BatchOptions {
+    fn default() -> Self {
+        Self {
+            max_records: 256,
+            max_bytes: 1024 * 1024,
+            max_delay: Duration::from_millis(1),
+            max_pending_batches: 1024,
+            max_pending_bytes: 128 * 1024 * 1024,
+        }
+    }
+}
+impl BatchOptions {
+    fn validate(self) -> Result<(), Error> {
+        if self.max_records == 0
+            || self.max_records > u32::MAX as usize
+            || self.max_bytes == 0
+            || self.max_bytes > isize::MAX as usize
+            || self.max_pending_batches == 0
+            || self.max_pending_batches > isize::MAX as usize
+            || self.max_pending_bytes == 0
+            || self.max_pending_bytes > isize::MAX as usize
+            || std::time::Instant::now()
+                .checked_add(self.max_delay)
+                .is_none()
+        {
+            return Err(Error::InvalidOptions(
+                "batch limits must be nonzero counts/bytes and fit clock bounds",
+            ));
+        }
+        Ok(())
+    }
+}
+
 /// Resource bounds and append completion behavior.
 #[derive(Debug, Clone, Copy)]
 pub struct Options {
-    pub sync_each_append: bool,
+    pub completion: Completion,
+    pub batch: BatchOptions,
     /// Entire encoded property bytes, including names, lengths and type tags.
     pub max_content_bytes: u64,
     /// Native container nesting at ingest, at most the format maximum of 128.
@@ -95,7 +149,8 @@ pub struct Options {
 impl Default for Options {
     fn default() -> Self {
         Self {
-            sync_each_append: false,
+            completion: Completion::Written,
+            batch: BatchOptions::default(),
             max_content_bytes: 16 * 1024 * 1024,
             max_depth: 128,
             max_query_records: 1024,
@@ -105,6 +160,7 @@ impl Default for Options {
 }
 impl Options {
     fn validate(self) -> Result<Self, Error> {
+        self.batch.validate()?;
         if self.max_content_bytes < 8
             || self.max_depth > 128
             || self.max_query_records == 0
@@ -206,6 +262,8 @@ pub enum Error {
     SequenceExhausted,
     ClockRange,
     Stopped,
+    QueueFull,
+    SharedIo(Arc<io::Error>),
     Io(io::Error),
 }
 impl fmt::Display for Error {
@@ -231,16 +289,18 @@ impl fmt::Display for Error {
             Self::SequenceExhausted => f.write_str("write sequence exhausted"),
             Self::ClockRange => f.write_str("write time is outside the supported range"),
             Self::Stopped => f.write_str("writer stopped after an uncertain operation or panic"),
+            Self::QueueFull => f.write_str("synchronized writer capacity exhausted"),
+            Self::SharedIo(e) => e.fmt(f),
             Self::Io(e) => e.fmt(f),
         }
     }
 }
 impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
-        if let Self::Io(e) = self {
-            Some(e)
-        } else {
-            None
+        match self {
+            Self::Io(e) => Some(e),
+            Self::SharedIo(e) => Some(e.as_ref()),
+            _ => None,
         }
     }
 }
@@ -281,17 +341,25 @@ impl std::error::Error for AppendError {
 pub struct Log {
     path: std::path::PathBuf,
     options: Options,
-    writer: Mutex<storage::Writer<std::fs::File>>,
+    writer: Arc<Mutex<storage::Writer<std::fs::File>>>,
+    batcher: Option<batch::Batcher>,
 }
 impl Log {
     /// Create a new file or validate an existing clean log, leaving damage untouched.
     pub fn open(path: impl AsRef<Path>, options: Options) -> Result<Self, Error> {
         let options = options.validate()?;
         let (path, writer) = storage::open(path.as_ref(), options)?;
+        let writer = Arc::new(Mutex::new(writer));
+        let batcher = if options.completion == Completion::Synced {
+            Some(batch::Batcher::new(Arc::clone(&writer), options.batch)?)
+        } else {
+            None
+        };
         Ok(Self {
             path,
             options,
-            writer: Mutex::new(writer),
+            writer,
+            batcher,
         })
     }
 
@@ -302,10 +370,14 @@ impl Log {
     pub fn append(&self, content: impl Into<Content>) -> Result<Record, AppendError> {
         let content = content.into();
         let result = (|| {
-            let mut frame =
-                codec::pack(&content, self.options).map_err(|e| (AppendOutcome::NotWritten, e))?;
-            let property_end = frame.len() - storage::TRAILER_LEN;
-            let property_hash = *blake3::hash(&frame[storage::HEADER_LEN..property_end]).as_bytes();
+            let mut prepared = batch::prepare(&content, self.options)
+                .map_err(|e| (AppendOutcome::NotWritten, e))?;
+            if let Some(batcher) = &self.batcher {
+                return batcher
+                    .submit(vec![prepared])
+                    .pop()
+                    .expect("one submitted frame result");
+            }
             let mut writer = self
                 .writer
                 .lock()
@@ -320,11 +392,11 @@ impl Log {
                 write_time(SystemTime::now()).map_err(|e| (AppendOutcome::NotWritten, e))?;
             let record = Record {
                 seq,
-                property_hash,
+                property_hash: prepared.hash,
                 created_at,
             };
-            storage::fill_frame(&mut frame, &record);
-            writer.append_frame(&frame, seq, self.options.sync_each_append, |f| f.sync_all())?;
+            storage::fill_frame(&mut prepared.frame, &record);
+            writer.append_frame(&prepared.frame, seq, false, |_| Ok(()))?;
             Ok(record)
         })();
         result.map_err(|(outcome, error)| AppendError {
@@ -332,6 +404,85 @@ impl Log {
             outcome,
             error,
         })
+    }
+
+    /// Append independent contents in result order. This is not a transaction.
+    /// Packing and submissions are chunked by the configured batch targets. A
+    /// valid oversized frame travels alone; invalid inputs retain their errors.
+    pub fn append_batch(&self, contents: Vec<Content>) -> Vec<Result<Record, AppendError>> {
+        let mut results: Vec<Option<Result<Record, AppendError>>> =
+            (0..contents.len()).map(|_| None).collect();
+        let mut frames = Vec::new();
+        let mut inputs = Vec::new();
+        let mut bytes = 0_usize;
+        for (index, content) in contents.into_iter().enumerate() {
+            match batch::prepare(&content, self.options) {
+                Err(error) => {
+                    results[index] = Some(Err(AppendError {
+                        content,
+                        outcome: AppendOutcome::NotWritten,
+                        error,
+                    }))
+                }
+                Ok(prepared) => {
+                    if !frames.is_empty()
+                        && (frames.len() >= self.options.batch.max_records
+                            || prepared.frame.len()
+                                > self.options.batch.max_bytes.saturating_sub(bytes))
+                    {
+                        self.finish_chunk(
+                            std::mem::take(&mut frames),
+                            std::mem::take(&mut inputs),
+                            &mut results,
+                        );
+                        bytes = 0;
+                    }
+                    bytes = bytes.saturating_add(prepared.frame.len());
+                    frames.push(prepared);
+                    inputs.push((index, content));
+                    if frames.len() >= self.options.batch.max_records
+                        || bytes >= self.options.batch.max_bytes
+                    {
+                        self.finish_chunk(
+                            std::mem::take(&mut frames),
+                            std::mem::take(&mut inputs),
+                            &mut results,
+                        );
+                        bytes = 0;
+                    }
+                }
+            }
+        }
+        if !frames.is_empty() {
+            self.finish_chunk(frames, inputs, &mut results);
+        }
+        results
+            .into_iter()
+            .map(|result| result.expect("every input receives a result"))
+            .collect()
+    }
+
+    fn finish_chunk(
+        &self,
+        mut frames: Vec<batch::Prepared>,
+        inputs: Vec<(usize, Content)>,
+        results: &mut [Option<Result<Record, AppendError>>],
+    ) {
+        let written = if let Some(batcher) = &self.batcher {
+            batcher.submit(frames)
+        } else {
+            match self.writer.lock() {
+                Ok(mut writer) => writer.append_prepared(&mut frames, false, |_| Ok(())),
+                Err(_) => batch::failures(AppendOutcome::NotWritten, Error::Stopped, frames.len()),
+            }
+        };
+        for ((index, content), result) in inputs.into_iter().zip(written) {
+            results[index] = Some(result.map_err(|(outcome, error)| AppendError {
+                content,
+                outcome,
+                error,
+            }));
+        }
     }
 
     fn snapshot(&self) -> Result<u64, Error> {
