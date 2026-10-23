@@ -20,3 +20,7 @@ tower-service = { version = "0.3", optional = true }
 [[example]]
 name = "gates"
 required-features = ["gates"]
+
+[[example]]
+name = "measure_gates"
+required-features = ["gates"]
