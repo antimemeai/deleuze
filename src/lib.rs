@@ -20,6 +20,9 @@
 mod codec;
 mod storage;
 
+#[cfg(feature = "gates")]
+pub mod gates;
+
 use std::fmt;
 use std::io;
 use std::path::Path;
