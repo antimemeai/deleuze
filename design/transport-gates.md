@@ -1,6 +1,10 @@
 # HTTP, gRPC and custom adapters: proposed first slice
 
-2026-10-23. A concrete transport candidate and implementation sequence for review.
+2026-10-23. Earlier transport candidate. The selected first implementation and
+reviewed plan are in [gate-implementation.md](gate-implementation.md). The optional
+Tokio/Axum stack has now been accepted; alternatives below remain research.
+
+Original candidate and implementation sequence for review.
 The operator approved shipping HTTP/gRPC gates and custom-adapter guidance;
 frameworks, dependencies, signatures and this wire profile still require discussion.
 No dependency is adopted by this document. The [capture contract](capture-contract.md)
