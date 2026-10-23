@@ -3,7 +3,8 @@
 2026-10-23. Eight retained primary originals inform the
 [capture-contract candidate](../../../design/capture-contract.md). This is a
 targeted study of event-content conversion and ownership, not a request-archival
-proposal. No framework, codec, runtime or dependency has been selected.
+proposal. The later [bundled-gate implementation](../../../design/gate-implementation.md)
+selects the optional runtime/transport stack; this source ledger predates it.
 
 The later operator clarification separates record fields from associated property
 data. Earlier examples involving an outer `properties` member concerned a

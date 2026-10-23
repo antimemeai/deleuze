@@ -25,7 +25,9 @@ operations. Later assertions never rewrite earlier records.
 The first native core implements the reviewed
 [small-core design](design/native-core.md). It uses one append-only binary file
 and the official BLAKE3 crate. Power-loss resilience is outside this build.
-Bundled network gates and optional record profiles remain subsequent work.
+Optional HTTP and raw-content unary gRPC gates share that core under the `gates`
+feature. See [running the gates and polyglot clients](docs/gates.md). Optional
+record profiles remain subsequent work.
 
 ```rust
 use deleuze::{Log, Options};

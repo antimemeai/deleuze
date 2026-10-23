@@ -4,6 +4,8 @@ Read [blackbird.md](blackbird.md) for the working doctrine. The symlink points t
 our shared workspace instructions; reference copies inside quarantine are historical.
 
 Use `bd` for all issue tracking. Run `bd prime` for workflow context.
+Commit coherent changes frequently and push them liberally, as the operator
+requested; do not save the whole phase for one final commit.
 
 Deleuze is a standalone Rust crate with one responsibility: capture every event
 that reaches its gate, extremely quickly, with deployment-funded reliability in
@@ -46,8 +48,10 @@ outside the current build; do not let it drive storage architecture or tests.
 Use ordinary I/O error handling and clean reopen. Preserve public source
 snapshots in ignored `quarantine/` and put tracked acquisition manifests in
 `papers/recon/`.
-Keep research and independent lane reports in `papers/`, and session records in
-`journal/`. Do not adopt a dependency without discussing it with the operator.
+The optional `gates` transport stack (Tokio, Axum, http-body and tower-service)
+was discussed and accepted; see design/gate-implementation.md. Keep research and
+independent lane reports in `papers/`, and session records in `journal/`.
+Do not adopt a new dependency without discussing it with the operator.
 
 ## Private-source boundary
 

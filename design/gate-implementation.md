@@ -41,7 +41,8 @@ claim exact request counts or nines for them.
 
 ## Wire profile
 
-POST /v1/capture stores body bytes unchanged through Log::append. No parsing or
+POST /v1/capture always selects HTTP content mode regardless of Content-Type,
+and stores body bytes unchanged through Log::append. No parsing or
 decompression. HTTP201 means complete content plus core success. HTTP404/405/415
 can accompany retained contents for invalid routes/methods/coding. Body too large
 returns413, timeout408, read/storage failure503; each is failed or unknown capture

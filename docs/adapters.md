@@ -38,6 +38,7 @@ current build. An append error returns the owned content and distinguishes
 pre-write failure from an uncertain write result. Adapters must preserve that
 distinction instead of inventing a definitive absence after an I/O error.
 
-The bundled HTTP/gRPC gates are proposed in
-[the transport design](../design/transport-gates.md); they are not implemented
-yet. Their optional dependencies remain under operator discussion.
+The bundled HTTP/gRPC gates use this same append operation. See
+[the gate guide](gates.md) for running the optional service and Python/Node
+clients, and [the implementation design](../design/gate-implementation.md) for
+request ownership, bounds and outcome aggregation.
