@@ -52,3 +52,7 @@
 # - linear.api-key
 # - github.org
 # - github.repo
+
+# Keep historical issue material out of repository backups.
+backup:
+  enabled: false
