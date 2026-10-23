@@ -168,7 +168,7 @@ def main():
         for key, value in metadata.items():
             output.write(f"{key}\t{value}\n")
     with (args.out_dir / "results.csv").open("x", newline="") as output:
-        writer = csv.DictWriter(output, fieldnames=sorted(set().union(*(row.keys() for row in rows))))
+        writer = csv.DictWriter(output, fieldnames=sorted(set().union(*(row.keys() for row in rows))), lineterminator="\n")
         writer.writeheader()
         writer.writerows(rows)
     print(f"results: {args.out_dir / 'results.csv'}", flush=True)

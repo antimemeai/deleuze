@@ -24,8 +24,26 @@ checks, not published capacity measurements. Example tests, formatting and
 Clippy pass before the main matrix. Full artifacts remain ignored; compact
 results and reproducible commands will be retained with the report.
 
-The first 72-run release matrix completed from committed source8f2dba1. All
+The first 72-run release matrix completed from committed source 8f2dba1. All
 post-timing identities/receipts/populations reconciled; no unknown outcomes
 occurred. Higher offered rates exposed server rejections and client not-sent
-work. A second randomized24-run suite compares gate limits64 and256 with the
-same client128 window before recommending any production change.
+work. A second randomized 24-run suite compares gate limits 64 and 256 with the
+same client 128 window before recommending any production change.
+
+All 96 runs completed and reconciled. The controlled gate 256 versus 64 comparison
+removed observed server rejections but increased not-sent work at the client
+window, with similar retained throughput and higher retained-request p99. The
+report separates those populations and makes no production configuration change.
+
+Compact datasets/environments/commands and all per-run summary metrics were
+committed and pushed. CSV CRLF lines and empty trailing TSV values initially
+triggered whitespace checks; repository copies now use LF and explicit NA for
+empty metrics, with numeric values unchanged. The matrix writer now emits LF.
+Full raw timings, synthetic logs and process-resource output remain ignored under
+target/measurements. Storage arithmetic and whole-process resource scope are
+documented without inventing deployment costs or reliability nines.
+
+Independent report review recomputed every displayed group and checked counts,
+medians/ranges, units, environment facts, timing interpretation and storage
+arithmetic. No report error remained. Native contention/profile and batching
+experiments are tracked separately; pre-service parser coverage remains open.

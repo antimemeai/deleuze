@@ -1,5 +1,8 @@
 # Measuring capture
 
+The [first local baseline](../papers/measurements/2026-10-23/README.md) includes
+96 release runs, per-run data, environmental details and interpretation.
+
 Use fresh directories; the runners refuse overwrite. No benchmark dependency is
 required beyond the optional gate stack and Node's built-in network clients.
 
@@ -44,8 +47,8 @@ Run the initial sequential matrix from a clean committed checkout:
 python3 scripts/run-measurements.py --out-dir target/measurements/baseline-new --repetitions 3
 ```
 
-Add `--suite gate-capacity` to compare gate limits64 and256 at the same 128
-client outstanding limit and10k/40k offered rates. Server rejection can move to
+Add `--suite gate-capacity` to compare gate limits 64 and 256 at the same 128
+client outstanding limit and 10k/40k offered rates. Server rejection can move to
 client not-sent work; compare both populations.
 
 This builds release binaries, randomizes a reproducible order, and records the

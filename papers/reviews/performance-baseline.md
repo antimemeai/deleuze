@@ -15,3 +15,9 @@ records in the file floor. No remaining blocker to the first clean-success
 matrix was found. The file floor has no log semantics; same-host clients and
 uncontrolled cache/scheduler state constrain interpretation. No reliability
 nines or isolated protocol overhead follows from these measurements.
+
+Independent result review then recomputed every displayed group from the saved
+CSVs: counts, medians/ranges, units, zero unknown/pending/partial populations,
+environment facts and storage arithmetic matched. It confirmed that the two
+measurement revisions have identical Rust/Node load implementations. No report
+error or unsupported causal conclusion was found.

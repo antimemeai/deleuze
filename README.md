@@ -46,8 +46,10 @@ in `Options` to also call `File::sync_all` before success. An append error retur
 the supplied content and says whether a write was attempted with an unknown
 outcome. A write/sync error stops later appends in that instance. Clean files
 can be reopened; damaged files are rejected without changing them. Reads and
-queries currently scan linearly. This is a starting implementation, with no
-throughput or deployment-reliability claim yet.
+queries currently scan linearly.
+The [first local baseline](papers/measurements/2026-10-23/README.md) records
+throughput, tail latency and failure populations for specific workloads.
+Deployment reliability in nines remains unestablished.
 
 See [the adapter guide](docs/adapters.md) for custom integrations and
 [the cryptographic boundary](design/cryptographic-boundary.md) for what the
