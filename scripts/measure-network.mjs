@@ -25,6 +25,7 @@ let scheduleEnd = 0n;
 let resolveDone;
 const done = new Promise(resolve => { resolveDone = resolve; });
 const counts = { retained: 0, failed: 0, unknown: 0 };
+const responseCodes = {};
 
 function metadata(headers) {
   let outcome = headers['deleuze-capture-outcome'];
@@ -44,9 +45,13 @@ function dispatch(id, due) {
   active++;
   issued++;
   let finished = false;
-  function finish(result) {
+  function finish(result, code) {
     if (finished) return;
     finished = true;
+    if (code !== undefined) {
+      const key = `${mode}_status_${code}`;
+      responseCodes[key] = (responseCodes[key] ?? 0) + 1;
+    }
     const end = now();
     counts[result.outcome]++;
     samples[id] = { id, due, start, end, ...result };
@@ -68,7 +73,7 @@ function dispatch(id, due) {
         response.on('end', () => {
           const result = metadata(response.headers);
           if (result.outcome === 'retained' && response.statusCode !== 201) protocolErrors++;
-          finish(result);
+          finish(result, response.statusCode);
         });
       });
       const timer = setTimeout(() => { request.destroy(); unknown(); }, 30_000);
@@ -94,7 +99,7 @@ function dispatch(id, due) {
             (headers[':status'] !== 200 || status !== '0' || !Buffer.concat(chunks).equals(Buffer.alloc(5)))) {
           protocolErrors++;
         }
-        finish(result);
+        finish(result, status ?? "missing");
       });
       const prefix = Buffer.alloc(5);
       prefix.writeUInt32BE(size, 1);
@@ -153,5 +158,6 @@ for (const [key, value] of Object.entries({
   offered: count, issued, not_sent: notSent, completed: issued, pending: active,
   client_retained: counts.retained, client_failed: counts.failed, client_unknown: counts.unknown,
   protocol_errors: protocolErrors, schedule_ns: scheduleEnd.toString(), client_ns: end.toString(),
+  ...responseCodes,
 })) console.log(`${key}\t${value}`);
 if (protocolErrors) process.exitCode = 1;

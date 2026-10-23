@@ -35,6 +35,7 @@ def normalized(name, rep, kind, metrics, resources):
         return next((metrics[key] for key in keys if key in metrics), "")
     row = {key: value(key) for key in [
         "mode", "boundary", "payload_bytes", "producers", "runtime_workers", "gate_in_flight",
+        "http_status_201", "http_status_503", "grpc_status_0", "grpc_status_8", "grpc_status_14", "grpc_status_3", "grpc_status_missing",
         "client_outstanding", "producer_batch_size", "producer_calls", "batch_max_records", "batch_max_bytes", "batch_max_delay_us", "grouping_model", "offered_rate_s", "offered", "issued", "not_sent", "completed", "pending",
         "client_retained", "client_failed", "client_unknown", "server_arrived", "server_retained",
         "server_failed", "server_unknown", "server_active", "partial_records", "server_only_complete",
@@ -69,7 +70,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out-dir", type=Path, required=True)
     parser.add_argument("--repetitions", type=int, default=3)
-    parser.add_argument("--suite", choices=["baseline", "gate-capacity", "batching"], default="baseline")
+    parser.add_argument("--suite", choices=["baseline", "gate-capacity", "batching", "batch-capacity"], default="baseline")
     args = parser.parse_args()
     if not 1 <= args.repetitions <= 10:
         parser.error("repetitions must be1..10")
@@ -159,6 +160,15 @@ def main():
                         "target/release/examples/measure_gates", "--protocol", protocol, "--count", str(rate * 2),
                         "--payload-bytes", "128", "--rate", str(rate), "--outstanding", str(cap), "--gate-in-flight", str(gate),
                         "--sync", sync, "--runtime-workers", "4", "--batch-records", "256", "--batch-delay-us", "1000"]))
+    if args.suite == "batch-capacity":
+        cases = []
+        for rep in range(1, args.repetitions + 1):
+            for protocol in ["http", "grpc"]:
+                for gate in [64, 256]:
+                    cases.append((f"{protocol}-synced-10000-gate{gate}-r{rep}", rep, "batch-capacity", [
+                        "target/release/examples/measure_gates", "--protocol", protocol, "--count", "20000",
+                        "--payload-bytes", "128", "--rate", "10000", "--outstanding", "128", "--gate-in-flight", str(gate),
+                        "--sync", "synced", "--runtime-workers", "4", "--batch-records", "256", "--batch-delay-us", "1000"]))
     random.Random(108).shuffle(cases)
     rows = []
     with (args.out_dir / "commands.tsv").open("x") as manifest:

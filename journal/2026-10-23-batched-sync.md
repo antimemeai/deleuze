@@ -31,3 +31,10 @@ The new measurement suite uses explicit input groups up to 1024 records, at leas
 real network load. Per-member latency covers the whole bulk API call rather than
 an amortized mean. File-floor groups compare the same explicit submission size;
 its concurrent callers do not imitate the production sync collector.
+
+The105-run release suite completed and reconciled. Explicit1024-record native
+groups reached138k–200k synchronized records/s across the three runs. Automatic
+network grouping showed a severe small-gate gRPC limit at10k/s, so a narrow
+64/256 admission-cap comparison will classify actual protocol statuses before
+reporting throughput as an end-to-end improvement. The load generator now counts
+response status codes alongside existing outcome populations.
