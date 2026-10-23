@@ -4,6 +4,9 @@
 Storage, concrete schema fields, codecs, frameworks and dependencies remain
 undecided. This is design work, not an implementation plan.
 
+[The capture-contract candidate](capture-contract.md) proposes a one-field event
+and develops the content conversion, ownership and failure rules for review.
+
 ## The promise begins when a request reaches a gate
 
 Ship HTTP and gRPC gates, native Rust integration, and a supported interface and
@@ -11,11 +14,11 @@ guide for writing other adapters. A request that reaches a gate belongs to the
 capture population. Successful event decoding, validation or queue admission
 cannot be prerequisites for counting it. Retries are additional arrivals.
 
-The precise transport observation point must be specified for each integration,
-including malformed and incomplete input. It must not silently become the point
-at which an application handler receives an already decoded event. Transport
-responses and caller-visible completion still need defined semantics, but do
-not determine whether an earlier arrival counts toward capture reliability.
+The operator explicitly rejected preserving requests in their entirety. Persist
+event contents only, without an additional request/body archive or second capture
+layer. Adapters must identify where content enters their supported gate and keep
+it owned through conversion. Caller-visible completion still needs defined
+semantics, but cannot determine whether an earlier arrival counts.
 
 ## All integrations use one owned capture operation
 

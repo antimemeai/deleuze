@@ -17,6 +17,8 @@ capture path; do not expose internals or alternative mutation routes. Event
 content uses arbitrary properties on an extremely small, strict schema. Unknown
 or malformed input must still have a persistable representation; large content
 may use references in properties. See design/gates-and-events.md.
+Persist event contents only. Do not add whole-request archival, duplicate original
+body storage, a second capture layer or mandatory request-lifecycle events.
 The current phase is
 source acquisition and research, before design and implementation. Preserve source
 snapshots in ignored `quarantine/` and put tracked acquisition manifests in

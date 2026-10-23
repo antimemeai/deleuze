@@ -10,8 +10,8 @@ selected.
 
 ## What is here, and how deeply it has been read
 
-The public study spans 181 lane bibliography entries, including duplicate
-citations, specifications and primary documentation. This is not 181 distinct
+The public study spans 189 lane bibliography entries, including duplicate
+citations, specifications and primary documentation. This is not 189 distinct
 papers read. Each bibliography states acquisition and reading depth. Source
 observations are static; reference systems have not been built or benchmarked.
 Private sources and identifying notes remain outside this repository and are
@@ -26,6 +26,7 @@ citations.
 | Invariants, ownership, concurrency and crash verification | 15 | [Report](verifiability/report.md), [7 pinned snapshots](verifiability/references-manifest.md), [Verbs objectives](verifiability/verbs-objectives.md) |
 | Tamper evidence, forward integrity and verifiable history | 7 | [Supplement](integrity/README.md), [originals and reading depths](integrity/bibliography.tsv) |
 | Offered load, tail latency, overload and measurement | 18 | [Study](measurement/study.md), [reading ledger](measurement/reading-ledger.md), [3 pinned snapshots](measurement/references.tsv), [bibliography](measurement/bibliography.tsv) |
+| Gate content conversion, protocols and ownership boundaries | 8 | [Selected primary reading](gate-protocols/README.md), [originals and reading depths](gate-protocols/bibliography.tsv) |
 
 The generated [navigation catalog](catalog.tsv) preserves lane IDs, original
 paths, URLs, hashes and reading status. Rebuild with

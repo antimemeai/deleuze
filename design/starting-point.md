@@ -6,7 +6,7 @@ the research already assembled. Claude remains stopped. No dependency chosen.
 
 ## Public evidence for the starting point
 
-The [research map](../papers/survey/README.md) indexes 181 lane citation entries
+The [research map](../papers/survey/README.md) indexes 189 lane citation entries
 with explicit reading depths. NanoLog studies compact producer capture and
 background expansion; Aether studies pipelining and buffer contention; SiloR
 studies parallel logging and durable epochs. The world-state literature
@@ -22,11 +22,6 @@ The working hypothesis is a small capture engine that takes responsibility for
 event data, records it, and exposes the recorded stream. Native Rust and foreign
 entry paths should share that engine's ownership and failure semantics. Consumers
 can build state, indexes, queries and evaluation views over the retained stream.
-
-
-
-
-
 The first candidate for analysis is producer-local capture buffers with explicit
 ownership, feeding batched recording. Compare it with direct serialized append:
 extra handoffs and buffering must earn their cost. Writer sharding, collector
@@ -109,6 +104,12 @@ event envelope; unfamiliar or malformed input must still be representable and
 persistable somehow. Large content can use property references. See
 [gates and events](gates-and-events.md) for the requirements and unresolved
 representation, ownership and artifact questions.
+
+[The capture-contract candidate](capture-contract.md) proposes a concrete
+one-field envelope and content ownership rules. Its
+[bounded review](../papers/reviews/capture-contract.md) records the counterexamples
+addressed so far. Event contents are retained once; whole-request archival and
+duplicate original-body storage are excluded by the operator.
 
 Caller-visible return and persistence milestones still need defined semantics,
 but they cannot narrow the earlier gate-arrival population. The desired nines

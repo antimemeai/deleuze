@@ -14,6 +14,7 @@ HTTP and gRPC gates, native Rust integration and custom adapters will share one
 capture path. Event content uses arbitrary properties on a very small, strict
 envelope, with opaque data or references available for otherwise unrepresentable
 or large content. See [gates and events](design/gates-and-events.md).
+Persist event contents only; there is no additional request archive.
 
 The project is in reconnaissance. Existing implementations are being acquired and
 read before we choose a design, storage format, interfaces, or dependencies.
@@ -26,6 +27,8 @@ live in `papers/`, session records in `journal/`, and issue tracking in `bd`.
 
 [The design starting point](design/starting-point.md) turns the acquired material
 into concrete comparisons for discussion; it is not an approved specification.
+[The capture-contract candidate](design/capture-contract.md) develops the small
+event type and ownership rules, with [review findings](papers/reviews/capture-contract.md).
 
 Read [blackbird.md](blackbird.md) for the working doctrine. This is a relative
 symlink to `../blackbird.md` in the operator's workspace.
