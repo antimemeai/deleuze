@@ -18,6 +18,7 @@ INPUTS = {
     "integrity": "integrity/bibliography.tsv",
     "measurement": "measurement/bibliography.tsv",
     "gate-protocols": "gate-protocols/bibliography.tsv",
+    "adaptive-batching": "adaptive-batching/bibliography.tsv",
 }
 ALIASES = {
     "id": ("id",), "title": ("title",), "authors": ("authors",),

@@ -5,6 +5,13 @@ baseline measured roughly594k/s written versus238/s with a barrier after each
 128-byte event. Use ordinary group commit, with one immutable record per event.
 No new dependency, file format, security protocol or power-loss subsystem.
 
+The operator subsequently requested adaptive batching research. The constants
+below describe the implemented baseline, not an established optimum. Actual
+occupancy varies with available work; the count/byte ceilings and collection
+delay do not learn from load or service time. See the
+[literature and reference study](../papers/survey/adaptive-batching/README.md)
+before selecting a replacement policy.
+
 ## Completion and public surface
 
 Replace the unpublished `Options::sync_each_append` flag with

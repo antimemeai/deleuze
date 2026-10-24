@@ -57,6 +57,11 @@ The optional `gates` transport stack (Tokio, Axum, http-body and tower-service)
 was discussed and accepted; see design/gate-implementation.md. Keep research and
 independent lane reports in `papers/`, and session records in `journal/`.
 Do not adopt a new dependency without discussing it with the operator.
+Ground engineering choices in both literature and reference implementations;
+read the relevant mechanisms and record exact sources and revisions. Mark gaps
+and provisional constants explicitly. Batching policy remains under study:
+current configurable ceilings and collection delay are not an established
+adaptive policy. See papers/survey/adaptive-batching/README.md.
 
 ## Private-source boundary
 

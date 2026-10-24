@@ -29,6 +29,7 @@ citations.
 | Tamper evidence, forward integrity and verifiable history | 7 | [Supplement](integrity/README.md), [originals and reading depths](integrity/bibliography.tsv) |
 | Offered load, tail latency, overload and measurement | 18 | [Study](measurement/study.md), [reading ledger](measurement/reading-ledger.md), [3 pinned snapshots](measurement/references.tsv), [bibliography](measurement/bibliography.tsv) |
 | Gate content conversion, protocols and ownership boundaries | 8 | [Selected primary reading](gate-protocols/README.md), [originals and reading depths](gate-protocols/bibliography.tsv) |
+| Adaptive batching, group commit and feedback control | 12 | [Synthesis and four reading lanes](adaptive-batching/README.md), [reading depths](adaptive-batching/bibliography.tsv); exact source manifests linked from the synthesis |
 
 The generated [navigation catalog](catalog.tsv) preserves lane IDs, original
 paths, URLs, hashes and reading status. Rebuild with
