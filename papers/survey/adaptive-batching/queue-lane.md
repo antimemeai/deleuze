@@ -21,11 +21,14 @@ extracted tree. `ThreadPool.getAggregationTarget()` calls the controller and the
 thread manager uses that target to choose queue dequeue behavior. This closes
 the paper-to-code connection.
 
-The code starts at maximum 1,000, permits a minimum 8, samples no more often than
-once per 1,000 ms when queried, uses `0.7*previous + 0.3*observed` throughput,
+With defaults, the code starts at maximum 1,000 and permits a minimum 8; both
+bounds and the 0.7 smoothing weight are configurable. It samples no more often
+than once per 1,000 ms when queried, uses `0.7*previous + 0.3*observed` throughput,
 and changes the target every fifth eligible sample. Direction changes use
 0.90/0.98 watermarks and 1.2 factors; 0.2/2.0 changes relative to the best
-throughput reset to maximum. These are historical implementation choices, not
+throughput reset the intermediate target to maximum and the direction to
+decreasing, then fall through the ordinary adjustment in the same call. The
+returned target therefore need not equal the reset maximum. These are historical implementation choices, not
 validated settings for this crate. It reads a wall clock, not a monotonic clock.
 No direct queue-age, bytes, sync latency or end-to-end percentile signal enters
 `getAggTarget`. Therefore a change in demand can resemble a change in capacity.
@@ -68,8 +71,8 @@ ownership/error analysis, not merely a change to batch size.
 Apache Kafka `da2224096692906b5e4398b2531fc4e810550c01`,
 [`RecordAccumulator.java:714–735`](https://github.com/apache/kafka/blob/da2224096692906b5e4398b2531fc4e810550c01/clients/src/main/java/org/apache/kafka/clients/producer/internals/RecordAccumulator.java#L714),
 source read. A batch becomes sendable when full, linger expires, buffers are
-exhausted, the accumulator closes, an explicit flush occurs, or a transaction
-completes; retry backoff can prevent sending. The count of messages actually
+exhausted, the accumulator closes, an explicit flush occurs, or transaction
+completion is in progress; retry backoff can prevent sending. The count of messages actually
 sent varies; this method does not learn the batch allocation size or linger.
 `BuiltInPartitioner.java:222–250` explains an additional interaction: switching
 partitions mid-batch can fragment batches, so switching may be deferred with a
